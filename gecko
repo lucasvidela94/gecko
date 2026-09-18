@@ -53,7 +53,7 @@ EOF
 # `gecko:` markers. Language-agnostic, zero config. Normalized to
 # "<path><TAB><reason>" so moving a line does not register as a new finding.
 gecko_detect_default() {
-  git grep -nE '(ponytail|gecko):' -- . 2>/dev/null | awk '
+  git grep -nE '(ponytail|gecko):' -- . ':(exclude).gecko/**' 2>/dev/null | awk '
     {
       i = index($0, ":")
       if (i == 0) next
