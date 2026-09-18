@@ -10,6 +10,9 @@ trap 'rm -rf "$work"' EXIT INT TERM
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$*"; }
 
+# keep the suite quiet; the notice is tested explicitly below
+export GECKO_QUIET=1
+
 cd "$work"
 git init -q
 git config user.email test@example.com
@@ -79,6 +82,11 @@ pass "check --json reports findings"
 "$GECKO" baseline --update >/dev/null
 "$GECKO" check >/dev/null || fail "check should pass after baseline"
 pass "baseline freezes findings"
+
+# 5b. with no detector configured, check says so (unless GECKO_QUIET=1)
+GECKO_QUIET=0 "$GECKO" check 2>&1 >/dev/null | grep -q 'no detector configured' \
+  || fail "check should warn when no detector is configured"
+pass "check warns when no detector is configured"
 
 # 6. version
 "$GECKO" version | grep -q '^gecko [0-9]' || fail "version output unexpected"

@@ -248,6 +248,9 @@ preguntar, no ve un spinner, paga por token y es literal. De ahí:
    `{"verdict":"clean"|"findings","new_count":N,"findings":[...]}`.
 5. **Barato.** Salida capada por defecto (`--all` la levanta); `--json` refleja
    los caps y marca `"truncated"`, para no truncar en silencio. La skill es corta.
+6. **Primera impresión honesta.** Sin detector configurado, `check` avisa por
+   stderr que solo mira anotaciones y cómo configurar uno real (`GECKO_QUIET=1` lo
+   silencia). Un agente nuevo no debe concluir "no hace nada".
 
 El criterio: si un flujo es cómodo para un dev, para un agente tiene que ser obvio.
 

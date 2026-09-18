@@ -107,7 +107,9 @@ gecko_detect() {
 ```
 
 Without a config, the default detector is the **annotation ratchet**: it counts
-unresolved `ponytail:` / `gecko:` markers. Zero setup, any language.
+unresolved `ponytail:` / `gecko:` markers. Zero setup, any language — but it only
+sees annotations, so `check` says so on stderr and points you here. Set
+`GECKO_QUIET=1` to silence that notice in CI.
 
 Detectors you can plug in: `knip` (TS/JS), `vulture` (Python), `deadcode` (Go),
 `cargo udeps` (Rust). Gecko does not install or know them; it only compares the
