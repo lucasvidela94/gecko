@@ -40,6 +40,17 @@ printf '%s\n' "$review" | awk '/^NEW FILES/{n=1} /^untracked|^TOUCHED/{n=0} n' |
   || fail "a brand-new staged file should be under NEW FILES"
 pass "review separates GREW from NEW FILES"
 
+# 1c. review --json is capped by default; --all lifts it
+i=1
+while [ "$i" -le 20 ]; do
+  printf 'x\n' > "cap-$i.ts"
+  git add "cap-$i.ts"
+  i=$((i + 1))
+done
+"$GECKO" review --json | grep -q '"truncated":true' || fail "review --json should report truncation"
+"$GECKO" review --json --all | grep -q '"truncated":false' || fail "review --json --all should not truncate"
+pass "review --json is capped; --all lifts it"
+
 # 2. review --json is valid-ish and mentions the candidate
 "$GECKO" review --json | grep -q '"path":"keep.txt"' || fail "review --json missed the candidate"
 pass "review --json emits the candidate"

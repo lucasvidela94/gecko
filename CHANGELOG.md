@@ -6,6 +6,15 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-18
+
+### Changed
+
+- `gecko review --json` now mirrors the human caps: GREW is complete, NEW FILES
+  and TOUCHED are capped unless `--all`. A `"truncated"` flag states plainly when
+  rows were omitted, so nothing is dropped silently. On a real 138-commit branch
+  this cut the default JSON payload from ~15 KB to ~4 KB.
+
 ## [0.4.0] - 2026-09-18
 
 ### Added
@@ -58,7 +67,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skill + CLI. POSIX `sh` + `git`, zero dependencies.
 - `install.sh` and distribution through [skills.sh](https://skills.sh/lucasvidela94/gecko).
 
-[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/lucasvidela94/gecko/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/lucasvidela94/gecko/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lucasvidela94/gecko/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lucasvidela94/gecko/compare/v0.1.0...v0.2.0

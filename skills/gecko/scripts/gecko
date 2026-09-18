@@ -12,7 +12,7 @@
 set -eu
 
 PROG=gecko
-VERSION=0.4.0
+VERSION=0.5.0
 OWNER=lucasvidela94
 REPO=gecko
 TAB=$(printf '\t')
@@ -147,6 +147,7 @@ cmd_review() {
   n_new=$(wc -l < "$tmp/new" | tr -d ' ')
 
   awk -F'\t' '$1 ~ /^[0-9]+$/ { printf "%s\t%s\t%s\n", $1, $2, $3 }' "$tmp/numstat" > "$tmp/touched"
+  n_touched=$(awk -F'\t' '$1 ~ /^[0-9]+$/ && !($1 > 0 && $2 == 0)' "$tmp/touched" | wc -l | tr -d ' ')
   awk -F'\t' '$1 ~ /^[0-9]+$/ { a += $1; d += $2 } END { printf "%d\t%d\n", a, d }' "$tmp/numstat" > "$tmp/totals"
   read -r total_added total_deleted < "$tmp/totals"
 
@@ -162,20 +163,49 @@ cmd_review() {
   if [ "$json" -eq 1 ]; then
     esc() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
     ratio_json=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "null"; else printf "%.2f", a/d }')
-    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"tests_hidden":%s,"grew":%s,"new":%s,"candidates":[' \
-      "$base" "$total_added" "$total_deleted" "$ratio_json" "$n_tests" "$n_grew" "$n_new"
+
+    # Mirror the human caps: machine output must not be a token trap either.
+    # --all lifts them, and "truncated" says plainly that rows were omitted.
+    if [ "$show_all" -eq 1 ]; then
+      new_cap=$n_new
+      touched_cap=$n_touched
+    else
+      new_cap=15
+      touched_cap=20
+    fi
+    truncated=false
+    if [ "$n_new" -gt "$new_cap" ] || [ "$n_touched" -gt "$touched_cap" ]; then
+      truncated=true
+    fi
+
+    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"tests_hidden":%s,"grew":%s,"new":%s,"truncated":%s,"candidates":[' \
+      "$base" "$total_added" "$total_deleted" "$ratio_json" "$n_tests" "$n_grew" "$n_new" "$truncated"
+
     first=1
-    while IFS="$TAB" read -r tag a p; do
+    while IFS="$TAB" read -r a p; do
       if [ "$first" -eq 0 ]; then printf ','; fi; first=0
-      printf '{"path":"%s","added":%s,"kind":"%s"}' "$(printf '%s' "$p" | esc)" "$a" "$tag"
-    done < "$tmp/cands"
+      printf '{"path":"%s","added":%s,"kind":"grew"}' "$(printf '%s' "$p" | esc)" "$a"
+    done < "$tmp/grew"
+
+    shown=0
+    while IFS="$TAB" read -r a p; do
+      if [ "$shown" -ge "$new_cap" ]; then break; fi
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","added":%s,"kind":"new"}' "$(printf '%s' "$p" | esc)" "$a"
+      shown=$((shown + 1))
+    done < "$tmp/new"
+
     printf '],"touched":['
     first=1
+    shown=0
     while IFS="$TAB" read -r a d p; do
       if [ "$a" -gt 0 ] && [ "$d" -eq 0 ]; then continue; fi
+      if [ "$shown" -ge "$touched_cap" ]; then break; fi
       if [ "$first" -eq 0 ]; then printf ','; fi; first=0
       printf '{"path":"%s","added":%s,"deleted":%s}' "$(printf '%s' "$p" | esc)" "$a" "$d"
+      shown=$((shown + 1))
     done < "$tmp/touched"
+
     printf '],"untracked":['
     first=1
     while IFS= read -r f; do
@@ -211,7 +241,6 @@ cmd_review() {
     printf '\n'
   fi
 
-  n_touched=$(awk -F'\t' '$1 ~ /^[0-9]+$/ && !($1 > 0 && $2 == 0)' "$tmp/touched" | wc -l | tr -d ' ')
   if [ "$n_touched" -gt 0 ]; then
     printf 'TOUCHED (added and removed)\n'
     shown=0

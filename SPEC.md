@@ -108,7 +108,7 @@ Comportamiento:
 - Separa **GREW** (ya existía y solo creció — donde se esconde el código muerto)
   de **NEW FILES** (nuevo, todo adición por definición). GREW va primero.
 - Oculta tests (`__tests__/`, `.test.`, `.spec.`) salvo `--tests`. Capa las listas
-  secundarias salvo `--all`.
+  secundarias salvo `--all` (también en `--json`, con `"truncated"`).
 - Cierra con el resumen: total agregado, total borrado, ratio, grew/new/tests.
 
 Salida (legible por agente, terse):
@@ -246,7 +246,8 @@ preguntar, no ve un spinner, paga por token y es literal. De ahí:
    (`GREW`, `NEW FILES`, `no new findings`) son exactamente los que imprime el CLI.
 4. **Veredicto parseable.** `check --json` devuelve
    `{"verdict":"clean"|"findings","new_count":N,"findings":[...]}`.
-5. **Barato.** Salida capada por defecto (`--all` la levanta); la skill es corta.
+5. **Barato.** Salida capada por defecto (`--all` la levanta); `--json` refleja
+   los caps y marca `"truncated"`, para no truncar en silencio. La skill es corta.
 
 El criterio: si un flujo es cómodo para un dev, para un agente tiene que ser obvio.
 

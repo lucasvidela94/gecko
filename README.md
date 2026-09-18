@@ -146,7 +146,8 @@ a spinner, it pays per token, and it is literal. So:
 - **Every failure carries the fix.** Success is exactly `no new findings`; a new
   finding states the three ways out.
 - **Parseable verdicts.** `--json` on `review` and `check` gives a stable shape.
-- **Cheap.** Output is capped by default (`--all` lifts it).
+- **Cheap.** Output is capped by default (`--all` lifts it), and `--json` mirrors
+  the caps with a `truncated` flag, so nothing is dropped silently.
 - **The skill and the CLI speak one vocabulary.** The sections the skill tells
   the agent to look for are the sections the CLI prints.
 
