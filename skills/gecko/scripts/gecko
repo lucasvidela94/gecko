@@ -12,7 +12,9 @@
 set -eu
 
 PROG=gecko
-VERSION=0.1.0
+VERSION=0.2.0
+OWNER=lucasvidela94
+REPO=gecko
 TAB=$(printf '\t')
 
 die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
@@ -23,7 +25,8 @@ gecko_dir() { printf '%s/.gecko\n' "$(repo_root)"; }
 self_path() {
   case "$0" in
     /*) printf '%s\n' "$0" ;;
-    *) printf '%s/%s\n' "$(pwd)" "$0" ;;
+    */*) printf '%s/%s\n' "$(pwd)" "$0" ;;
+    *) command -v "$PROG" 2>/dev/null || printf '%s/%s\n' "$(pwd)" "$0" ;;
   esac
 }
 
@@ -42,6 +45,7 @@ usage:
   gecko baseline [--update]            regenerate the baseline
   gecko hook install|uninstall         git pre-commit hook
   gecko version                        print the version
+  gecko self-update [--check]          update the CLI from GitHub releases
   gecko help
 
 config:   .gecko/config may define gecko_detect() printing "<path><TAB><finding>".
@@ -271,6 +275,76 @@ cmd_hook() {
   esac
 }
 
+# --- self-update -----------------------------------------------------------
+
+cmd_self_update() {
+  check_only=0
+  force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --check) check_only=1; shift ;;
+      --force) force=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) die "self-update: unknown argument '$1'" ;;
+    esac
+  done
+
+  self=$(self_path)
+  dir=$(dirname "$self")
+
+  # A sibling SKILL.md means the skills CLI owns this file, not us.
+  if [ -f "$dir/../SKILL.md" ] && [ "$force" -eq 0 ]; then
+    printf 'gecko lives inside a skill folder; the skills CLI owns it.\n' >&2
+    printf 'update it with:  npx skills update\n' >&2
+    printf 'override with:   %s self-update --force\n' "$PROG" >&2
+    return 0
+  fi
+
+  command -v curl >/dev/null 2>&1 || die "curl is required for self-update"
+
+  latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    "https://github.com/$OWNER/$REPO/releases/latest" 2>/dev/null \
+    | sed -E 's#.*/tag/##' || true)
+  case "$latest" in
+    v[0-9]*) : ;;
+    *) die "could not determine the latest release (offline?)" ;;
+  esac
+  latest_v=${latest#v}
+
+  if [ "$latest_v" = "$VERSION" ]; then
+    printf 'gecko is up to date (%s)\n' "$VERSION"
+    return 0
+  fi
+
+  is_newer=$(awk -v a="$latest_v" -v b="$VERSION" 'BEGIN {
+    split(a, x, "."); split(b, y, ".");
+    for (i = 1; i <= 3; i++) {
+      if (x[i]+0 > y[i]+0) { print 1; exit }
+      if (x[i]+0 < y[i]+0) { print 0; exit }
+    }
+    print 0
+  }')
+  if [ "$is_newer" -eq 0 ] && [ "$force" -eq 0 ]; then
+    printf 'gecko %s is newer than the latest release (%s); nothing to do\n' "$VERSION" "$latest_v"
+    return 0
+  fi
+
+  if [ "$check_only" -eq 1 ]; then
+    printf 'current: %s   latest: %s\n' "$VERSION" "$latest_v"
+    return 0
+  fi
+
+  # Download beside the target so the replace is an atomic rename.
+  tmp="$dir/.$PROG.tmp.$$"
+  trap 'rm -f "$tmp"' EXIT INT TERM
+  curl -fsSL "https://raw.githubusercontent.com/$OWNER/$REPO/$latest/skills/gecko/scripts/gecko" -o "$tmp" \
+    || die "download failed ($latest)"
+  grep -q '^VERSION=' "$tmp" || die "downloaded file does not look like gecko"
+  chmod 755 "$tmp"
+  mv "$tmp" "$self" || die "could not replace $self"
+  printf 'updated gecko %s -> %s\n' "$VERSION" "$latest_v"
+}
+
 # --- dispatch --------------------------------------------------------------
 
 case "${1:-help}" in
@@ -279,6 +353,7 @@ case "${1:-help}" in
   baseline|--update) shift; cmd_baseline "$@" ;;
   hook) shift; cmd_hook "$@" ;;
   version|--version|-v) printf '%s %s\n' "$PROG" "$VERSION" ;;
+  self-update|update) shift; cmd_self_update "$@" ;;
   help|-h|--help) usage ;;
   *) die "unknown command '$1' (try: $PROG help)" ;;
 esac

@@ -26,8 +26,30 @@ Want `gecko` on your `PATH` too, or no Node? Either works, or both:
 curl -fsSL https://raw.githubusercontent.com/lucasvidela94/gecko/main/install.sh | sh
 ```
 
-Pin a version with `--version v0.1.0`, choose a bin dir with `--bin DIR`, skip a
+Pin a version with `--version v0.2.0`, choose a bin dir with `--bin DIR`, skip a
 half with `--no-cli` / `--no-skill`.
+
+## Update
+
+Two things can be updated, and they update differently.
+
+**Installed with `npx skills`** — the skills CLI owns both the skill and the CLI
+inside it:
+
+```bash
+npx skills update
+```
+
+**CLI on your `PATH`** (the `install.sh` way):
+
+```bash
+gecko self-update          # fetch the latest release
+gecko self-update --check  # just report, change nothing
+```
+
+`self-update` refuses to touch a copy that lives inside a skill folder — that
+one belongs to the skills CLI. It also refuses to downgrade. Updates come from
+GitHub releases over `curl`; the core commands stay offline.
 
 ## Use
 

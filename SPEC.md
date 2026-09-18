@@ -89,6 +89,7 @@ gecko check                          # el ratchet (exit 1 si hay hallazgos nuevo
 gecko baseline [--update]            # regenera el baseline
 gecko hook install|uninstall         # hook de pre-commit (opcional)
 gecko version                        # versión
+gecko self-update [--check]          # autoactualización del CLI standalone
 ```
 
 ### 6.1 `gecko review`
@@ -203,6 +204,13 @@ necesario (no el SPEC ni el README).
 
 **Versionado.** Semver, tags `vX.Y.Z`, `gecko version`. El instalador resuelve el
 último release y permite pinnear con `--version`.
+
+**Actualización.** El skill (y su CLI) los actualiza `npx skills update`: el
+ecosistema es el dueño. El CLI standalone en el PATH se actualiza con
+`gecko self-update`, que resuelve el último release y hace un reemplazo atómico
+(descarga al lado del destino, `mv`). `self-update` se niega a tocar una copia
+que vive dentro de una carpeta de skill — ahí manda el gestor — y no downgradea
+sin `--force`. Requiere `curl`; el resto del CLI sigue offline.
 
 **Descubrimiento.** El repositorio público aparece en skills.sh, que rankea por
 telemetría anónima de instalación. Badge en el README. La capa dura sigue siendo
