@@ -18,7 +18,7 @@ printf 'a\n' > keep.txt
 printf 'b\n' > gone.txt
 git add -A
 git commit -q -m init
-"$GECKO" baseline >/dev/null
+"$GECKO" baseline --update >/dev/null
 
 # 1. review flags a pure addition and lists untracked files
 printf 'a\nb\nc\n' > keep.txt    # tracked, added lines, none removed
@@ -54,8 +54,18 @@ git add marked.txt
 if "$GECKO" check >/dev/null 2>&1; then fail "check should fail on a new finding"; fi
 pass "check fails on a new finding"
 
-# 5. baseline freezes it; check passes again
+# 4b. a bare `baseline` is a dry run: it must NOT clear the new finding
 "$GECKO" baseline >/dev/null
+if "$GECKO" check >/dev/null 2>&1; then fail "bare baseline must not write"; fi
+pass "bare baseline is a dry run"
+
+# 4c. check --json reports a machine-readable verdict
+"$GECKO" check --json 2>/dev/null | grep -q '"verdict":"findings"' \
+  || fail "check --json did not report the findings verdict"
+pass "check --json reports findings"
+
+# 5. baseline freezes it; check passes again
+"$GECKO" baseline --update >/dev/null
 "$GECKO" check >/dev/null || fail "check should pass after baseline"
 pass "baseline freezes findings"
 

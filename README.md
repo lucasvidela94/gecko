@@ -77,7 +77,9 @@ gecko review                 # what did I add? rank the reap targets
 gecko review --base main     # same, over a branch
 gecko review --json          # machine-readable
 gecko check                  # ratchet: fail on new findings
-gecko baseline --update      # freeze current findings as the baseline
+gecko check --json           # machine-readable verdict (clean | findings)
+gecko baseline               # show what would be frozen (writes nothing)
+gecko baseline --update      # freeze current findings
 gecko hook install           # hard enforcement at commit time
 gecko self-update            # update the standalone CLI
 ```
@@ -133,6 +135,23 @@ ratchet counts them, so the excuse has to be honest.
   CI enforce regardless of what the model decided.
 - **Portable.** The same `SKILL.md` works unchanged across every agent. That is
   the point, and the test.
+
+## Built for agents first
+
+The primary user is an LLM, not a human. It cannot ask questions, it does not see
+a spinner, it pays per token, and it is literal. So:
+
+- **Non-interactive and safe to re-run.** Nothing is innocently destructive:
+  `baseline` writes nothing without `--update`.
+- **Every failure carries the fix.** Success is exactly `no new findings`; a new
+  finding states the three ways out.
+- **Parseable verdicts.** `--json` on `review` and `check` gives a stable shape.
+- **Cheap.** Output is capped by default (`--all` lifts it).
+- **The skill and the CLI speak one vocabulary.** The sections the skill tells
+  the agent to look for are the sections the CLI prints.
+
+That last rule is the whole idea: a flow that is comfortable for a developer must
+be *obvious* for an agent.
 
 ## Works with
 

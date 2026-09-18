@@ -6,6 +6,22 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-18
+
+### Added
+
+- `gecko check --json` — machine-readable verdict:
+  `{"verdict":"clean"|"findings","new_count":N,"findings":[...]}`.
+- Agent-DX pass: the skill now names the exact sections the CLI prints
+  (`GREW`, `NEW FILES`, `no new findings`). The skill and the CLI are one
+  contract.
+
+### Changed
+
+- `gecko baseline` no longer writes by default; it shows what would be frozen.
+  `gecko baseline --update` writes. This matches what the docs already said and
+  removes a footgun for agents that run commands without hesitation.
+
 ## [0.3.0] - 2026-09-18
 
 ### Changed
@@ -42,7 +58,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skill + CLI. POSIX `sh` + `git`, zero dependencies.
 - `install.sh` and distribution through [skills.sh](https://skills.sh/lucasvidela94/gecko).
 
-[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lucasvidela94/gecko/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/lucasvidela94/gecko/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lucasvidela94/gecko/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucasvidela94/gecko/releases/tag/v0.1.0

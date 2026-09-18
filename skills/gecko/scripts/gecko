@@ -12,7 +12,7 @@
 set -eu
 
 PROG=gecko
-VERSION=0.3.0
+VERSION=0.4.0
 OWNER=lucasvidela94
 REPO=gecko
 TAB=$(printf '\t')
@@ -45,8 +45,8 @@ gecko — deletion as an output. POSIX sh + git, zero deps.
 usage:
   gecko review [--base REF] [--json] [--tests] [--all]
                                        show the diff as reap targets
-  gecko check                          ratchet: fail on new findings
-  gecko baseline [--update]            regenerate the baseline
+  gecko check [--json]                 ratchet: fail on new findings
+  gecko baseline [--update]            show what would freeze; --update writes it
   gecko hook install|uninstall         git pre-commit hook
   gecko version                        print the version
   gecko self-update [--check]          update the CLI from GitHub releases
@@ -249,6 +249,15 @@ cmd_review() {
 # --- ratchet ---------------------------------------------------------------
 
 cmd_check() {
+  json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json) json=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) die "check: unknown argument '$1'" ;;
+    esac
+  done
+
   root=$(repo_root); cd "$root" || die "cannot cd to repo root"
   load_config
   dir=$(gecko_dir)
@@ -269,13 +278,30 @@ cmd_check() {
   # lower collation pinned: comm silently produces nonsense across locales
   gone=$(LC_ALL=C comm -23 "$tmp/base" "$tmp/current" || true)
   new=$(LC_ALL=C comm -13 "$tmp/base" "$tmp/current" || true)
+  n_gone=$(printf '%s\n' "$gone" | grep -c . || true)
+  n_new=$(printf '%s\n' "$new" | grep -c . || true)
 
-  if [ -n "$gone" ]; then
-    n_gone=$(printf '%s\n' "$gone" | grep -c . || true)
+  if [ "$json" -eq 1 ]; then
+    esc() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+    if [ "$n_new" -gt 0 ]; then verdict=findings; else verdict=clean; fi
+    printf '{"verdict":"%s","new_count":%s,"gone_count":%s,"findings":[' "$verdict" "$n_new" "$n_gone"
+    printf '%s\n' "$new" > "$tmp/newlist"
+    first=1
+    while IFS="$TAB" read -r p k; do
+      [ -n "$p" ] || continue
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","key":"%s"}' "$(printf '%s' "$p" | esc)" "$(printf '%s' "$k" | esc)"
+    done < "$tmp/newlist"
+    printf ']}\n'
+    if [ "$n_new" -gt 0 ]; then exit 1; fi
+    exit 0
+  fi
+
+  if [ "$n_gone" -gt 0 ]; then
     printf 'note: %s baselined finding(s) are gone. Tighten with: %s baseline --update\n\n' "$n_gone" "$PROG"
   fi
 
-  if [ -n "$new" ]; then
+  if [ "$n_new" -gt 0 ]; then
     printf 'NEW findings (nothing references these):\n\n' >&2
     printf '%s\n' "$new" | sed 's/^/  /' >&2
     printf '\nWire it up, delete it, or update the baseline saying why in the commit.\n' >&2
@@ -286,13 +312,35 @@ cmd_check() {
 }
 
 cmd_baseline() {
+  update=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --update) update=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) die "baseline: unknown argument '$1'" ;;
+    esac
+  done
+
   root=$(repo_root); cd "$root" || die "cannot cd to repo root"
   load_config
   dir=$(gecko_dir)
+  baseline="$dir/baseline"
+  tmp=$(mktemp -d) || die "mktemp failed"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  detect > "$tmp/raw" 2>/dev/null || true
+  LC_ALL=C sort -u "$tmp/raw" > "$tmp/current"
+  n=$(grep -c . "$tmp/current" || true)
+
+  if [ "$update" -eq 0 ]; then
+    printf '%s finding(s) would be frozen in %s.\n' "$n" "$baseline"
+    printf 're-run with --update to write it.\n'
+    return 0
+  fi
+
   mkdir -p "$dir"
-  detect | LC_ALL=C sort -u > "$dir/baseline"
-  n=$(grep -c . "$dir/baseline" || true)
-  printf 'baseline updated: %s entries -> %s\n' "$n" "$dir/baseline"
+  cp "$tmp/current" "$baseline"
+  printf 'baseline updated: %s entries -> %s\n' "$n" "$baseline"
 }
 
 # --- hook ------------------------------------------------------------------
@@ -405,7 +453,7 @@ cmd_self_update() {
 case "${1:-help}" in
   review) shift; cmd_review "$@" ;;
   check) shift; cmd_check "$@" ;;
-  baseline|--update) shift; cmd_baseline "$@" ;;
+  baseline) shift; cmd_baseline "$@" ;;
   hook) shift; cmd_hook "$@" ;;
   version|--version|-v) printf '%s %s\n' "$PROG" "$VERSION" ;;
   self-update|update) shift; cmd_self_update "$@" ;;

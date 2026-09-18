@@ -86,8 +86,8 @@ El núcleo son dos archivos: `SKILL.md` (política) y `scripts/gecko`
 
 ```
 gecko review [--base REF] [--json]   # input para el paso de recolección
-gecko check                          # el ratchet (exit 1 si hay hallazgos nuevos)
-gecko baseline [--update]            # regenera el baseline
+gecko check [--json]                 # el ratchet (exit 1 si hay hallazgos nuevos)
+gecko baseline [--update]            # muestra qué congelaría; --update lo escribe
 gecko hook install|uninstall         # hook de pre-commit (opcional)
 gecko version                        # versión
 gecko self-update [--check]          # autoactualización del CLI standalone
@@ -233,7 +233,24 @@ El `SKILL.md` no se toca al cambiar de harness. Esa es la prueba de portabilidad
 - Una sesión que siga la skill termina con borrados o con razones escritas —
   nunca con silencio.
 
-## 10. Futuro (niveles 2–3, fuera de v0)
+## 11. DX para agentes (el usuario primario)
+
+El usuario primario de gecko es un LLM, no un humano. Un agente no puede
+preguntar, no ve un spinner, paga por token y es literal. De ahí:
+
+1. **Inequívoco.** La salida declara su base (`base: HEAD`) y su veredicto
+   (`no new findings`), y el error trae el próximo paso.
+2. **Seguro de re-ejecutar.** Nada es inocentemente destructivo: `baseline` no
+   escribe sin `--update`.
+3. **Contrato skill↔CLI.** Los nombres que la skill le dice al agente que busque
+   (`GREW`, `NEW FILES`, `no new findings`) son exactamente los que imprime el CLI.
+4. **Veredicto parseable.** `check --json` devuelve
+   `{"verdict":"clean"|"findings","new_count":N,"findings":[...]}`.
+5. **Barato.** Salida capada por defecto (`--all` la levanta); la skill es corta.
+
+El criterio: si un flujo es cómodo para un dev, para un agente tiene que ser obvio.
+
+## 12. Futuro (niveles 2–3, fuera de v0)
 
 Criterio de entrada: v0 en uso real y su límite conocido.
 

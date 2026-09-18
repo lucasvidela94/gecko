@@ -39,15 +39,19 @@ git remembers.
 
 Run this before saying a task is done.
 
-1. `gecko review` — get the target list. It ranks files by net addition and
-   flags **candidates**: files with additions and zero deletions.
-2. For every candidate, for every added block, ask: **does its reason still
-   exist?** If no, delete it.
+1. `gecko review` — get the target list. It separates **GREW** (files that
+   already existed and only gained lines, where orphaned additions hide) from
+   **NEW FILES** (all additions by definition). GREW comes first and is where you
+   look. Test files are hidden unless you pass `--tests`; long lists are capped
+   unless you pass `--all`.
+2. For every GREW file, for every added block, ask: **does its reason still
+   exist?** If no, delete it. NEW FILES are new, so skim them — don't grind them.
 3. If it stays, confirm the reason still holds. If it is a deliberate shortcut
    with a known ceiling, mark it:
    `# gecko: <reason> — remove when <condition>`.
-4. `gecko check` must pass. A new finding means you wired nothing, deleted
-   nothing, and explained nothing. Pick one.
+4. `gecko check` must pass. It prints exactly `no new findings` on success;
+   anything else means you wired nothing, deleted nothing, and explained
+   nothing. Pick one.
 
 Never add a `gecko:`/`ponytail:` annotation just to silence the ratchet. The
 annotation is a claim about the future; a false one is worse than dead code,
@@ -64,7 +68,7 @@ the baseline to zero; tightening it is a separate, deliberate act
 
 | Level | What changes |
 |-------|--------------|
-| **lite** | Run the reap pass and report candidates, but only delete when asked. |
+| **lite** | Run the reap pass and report the GREW files, but only delete when asked. |
 | **full** | Delete orphaned additions, annotate the rest. `gecko check` clean. Default. |
 | **ultra** | Reap aggressively and challenge every surviving addition: name why it still earns its place. |
 
