@@ -12,6 +12,7 @@
 set -eu
 
 PROG=gecko
+VERSION=0.1.0
 TAB=$(printf '\t')
 
 die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
@@ -40,6 +41,7 @@ usage:
   gecko check                          ratchet: fail on new findings
   gecko baseline [--update]            regenerate the baseline
   gecko hook install|uninstall         git pre-commit hook
+  gecko version                        print the version
   gecko help
 
 config:   .gecko/config may define gecko_detect() printing "<path><TAB><finding>".
@@ -276,6 +278,7 @@ case "${1:-help}" in
   check) shift; cmd_check "$@" ;;
   baseline|--update) shift; cmd_baseline "$@" ;;
   hook) shift; cmd_hook "$@" ;;
+  version|--version|-v) printf '%s %s\n' "$PROG" "$VERSION" ;;
   help|-h|--help) usage ;;
   *) die "unknown command '$1' (try: $PROG help)" ;;
 esac

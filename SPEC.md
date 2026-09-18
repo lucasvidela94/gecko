@@ -68,16 +68,18 @@ Excluido a propósito, con criterio de entrada para después:
 
 ```
 gecko/
-├── SPEC.md            # este documento
-├── SKILL.md           # la disciplina (política) — en inglés
-├── gecko             # script POSIX sh, cero deps (mecanismo)
-├── README.md          # instalación portable + enganche en git/CI
-└── examples/
-    └── .gecko/       # config y baseline de ejemplo
+├── SPEC.md                    # este documento
+├── README.md                  # instalación y uso
+├── LICENSE
+├── install.sh                 # instalador (curl-able)
+├── skills/gecko/
+│   ├── SKILL.md               # la disciplina (política) — en inglés
+│   └── scripts/gecko          # el CLI, POSIX sh, cero deps (mecanismo)
+└── examples/.gecko/config     # detector de ejemplo
 ```
 
-El núcleo son dos archivos: `SKILL.md` (política) y `gecko` (mecanismo). El
-resto es envoltorio.
+El núcleo son dos archivos: `SKILL.md` (política) y `scripts/gecko`
+(mecanismo). El resto es envoltorio.
 
 ## 6. Contrato del CLI
 
@@ -86,6 +88,7 @@ gecko review [--base REF] [--json]   # input para el paso de recolección
 gecko check                          # el ratchet (exit 1 si hay hallazgos nuevos)
 gecko baseline [--update]            # regenera el baseline
 gecko hook install|uninstall         # hook de pre-commit (opcional)
+gecko version                        # versión
 ```
 
 ### 6.1 `gecko review`
@@ -181,13 +184,29 @@ Contenido mínimo:
 - **Límites honestos.** No detecta ramas muertas, campos nunca asignados, ni
   efectos muertos. Eso lo encuentra ejecutar el producto, no analizarlo.
 
-## 8. Instalación portable
+## 8. Distribución e instalación
 
-| Capa | Cómo |
-|---|---|
-| Skill | Copiar `SKILL.md` a `~/.config/opencode/skills/gecko/`, `~/.claude/skills/gecko/`, `~/.codex/skills/gecko/`, o pegar el bloque en `AGENTS.md` / `CLAUDE.md` / reglas. |
-| Script | `scripts/gecko` en el repo, o `gecko` en el PATH. |
-| Duro | `gecko hook install` (pre-commit) o un paso de CI. |
+Dos canales, uno primario:
+
+| Canal | Comando | Para qué | Por qué |
+|---|---|---|---|
+| **skills.sh** (primario) | `npx skills add lucasvidela94/gecko -g -y` | Instala el skill (con su CLI) en todos los agentes detectados. | Nativo del ecosistema, descubre solo, cero mantenimiento, 75+ agentes. |
+| **`install.sh`** (secundario) | `curl -fsSL .../install.sh \| sh` | Pone `gecko` en el PATH y, si hay `npx`, instala el skill. | Para uso manual del CLI o entornos sin Node. |
+
+**No hay instalador propio para el skill.** `npx skills` ya copia el skill a cada
+harness; reimplementar eso con un `curl` sería duplicar el ecosistema y perder el
+descubrimiento.
+
+El layout sigue la convención del ecosistema — `skills/gecko/SKILL.md` +
+`skills/gecko/scripts/gecko` — para que el skill instalado contenga solo lo
+necesario (no el SPEC ni el README).
+
+**Versionado.** Semver, tags `vX.Y.Z`, `gecko version`. El instalador resuelve el
+último release y permite pinnear con `--version`.
+
+**Descubrimiento.** El repositorio público aparece en skills.sh, que rankea por
+telemetría anónima de instalación. Badge en el README. La capa dura sigue siendo
+`gecko hook install` (pre-commit) o un paso de CI.
 
 El `SKILL.md` no se toca al cambiar de harness. Esa es la prueba de portabilidad.
 

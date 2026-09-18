@@ -1,44 +1,40 @@
-# Gecko
+# gecko
 
-Deletion as an output. Portable — POSIX `sh` + `git`, zero dependencies.
+**Deletion as an output.** A portable skill + zero-dependency CLI that makes
+removing orphaned code a required step of every change.
 
 Ponytail prevents at write time. Gecko collects at close time: before a change
 counts as done, every added line is either justified in writing or removed.
 
-See [SPEC.md](SPEC.md) for the design and [SKILL.md](SKILL.md) for the agent
-discipline.
+Git is the memory (it survives compaction, restarts and harness changes). A
+ratchet is the enforcement (it refuses to let the debt grow).
+
+[![skills.sh](https://skills.sh/b/lucasvidela94/gecko)](https://skills.sh/lucasvidela94/gecko)
 
 ## Install
 
-Two files matter: the `gecko` script (mechanism) and `SKILL.md` (policy).
-
-### 1. The script
-
-Put `gecko` on your `PATH`, or copy it into the repo as `scripts/gecko`:
-
-```sh
-install -m 755 gecko ~/.local/bin/gecko
+```bash
+npx skills add lucasvidela94/gecko -g -y
 ```
 
-### 2. The skill
+That installs the skill — and its CLI — into every agent it finds: OpenCode,
+Claude Code, Codex, Cursor and 75 more. No other setup.
 
-Copy `SKILL.md` into whatever harness you use — no edits needed, that is the
-portability test:
+Want `gecko` on your `PATH` too, or no Node? Either works, or both:
 
-```sh
-mkdir -p ~/.config/opencode/skills/gecko && cp SKILL.md ~/.config/opencode/skills/gecko/
-mkdir -p ~/.claude/skills/gecko         && cp SKILL.md ~/.claude/skills/gecko/
-mkdir -p ~/.codex/skills/gecko          && cp SKILL.md ~/.codex/skills/gecko/
+```bash
+curl -fsSL https://raw.githubusercontent.com/lucasvidela94/gecko/main/install.sh | sh
 ```
 
-For harnesses without a skills directory, paste the body of `SKILL.md` into
-`AGENTS.md`, `CLAUDE.md`, or the equivalent rules file.
+Pin a version with `--version v0.1.0`, choose a bin dir with `--bin DIR`, skip a
+half with `--no-cli` / `--no-skill`.
 
 ## Use
 
-```sh
-gecko review                 # what did I add? rank reap targets
+```bash
+gecko review                 # what did I add? rank the reap targets
 gecko review --base main     # same, over a branch
+gecko review --json          # machine-readable
 gecko check                  # ratchet: fail on new findings
 gecko baseline --update      # freeze current findings as the baseline
 gecko hook install           # hard enforcement at commit time
@@ -57,13 +53,17 @@ CANDIDATES (added, nothing removed)
 summary: +252 -52  ratio 4.8:1  (candidates: 2)
 ```
 
-`check` is the ratchet. Pre-existing debt is frozen; only new findings fail.
+`check` is the ratchet. Pre-existing debt is frozen in `.gecko/baseline` and left
+alone; only **new** findings fail. It refuses growth, not existence — a gate that
+demands zero never activates, because the pre-existing debt blocks it.
+
+`hook install` writes a `pre-commit` that runs `check`. The agent can ignore the
+skill; git cannot ignore the hook.
 
 ## Detectors
 
-`gecko check` is language-agnostic. It runs whatever `.gecko/config` tells it
-to. Define `gecko_detect()` to print one finding per line as
-`<path><TAB><finding>`:
+`gecko check` is language-agnostic. It runs whatever `.gecko/config` tells it to.
+Define `gecko_detect()` to print one finding per line as `<path><TAB><finding>`:
 
 ```sh
 # .gecko/config — TypeScript/JavaScript
@@ -75,22 +75,45 @@ gecko_detect() {
 Without a config, the default detector is the **annotation ratchet**: it counts
 unresolved `ponytail:` / `gecko:` markers. Zero setup, any language.
 
-Known detectors you can plug in: `knip` (TS/JS), `vulture` (Python), `deadcode`
-(Go), `cargo udeps` (Rust). Gecko does not install or know them; it only
-compares the list before and after.
+Detectors you can plug in: `knip` (TS/JS), `vulture` (Python), `deadcode` (Go),
+`cargo udeps` (Rust). Gecko does not install or know them; it only compares the
+list before and after.
 
-## Hard enforcement
+## The annotation convention
 
-`gecko hook install` writes a `pre-commit` hook that runs `gecko check`. For
-CI, add the same command as a step — it exits non-zero on new findings.
+When an addition stays on purpose, say why, in the code:
+
+```js
+// gecko: retry loop until the API paginates — remove when it does
+```
+
+False annotations are worse than dead code, because they look handled. Gecko's
+ratchet counts them, so the excuse has to be honest.
+
+## What it does not do
+
+Gecko finds orphaned additions and annotation debt. It does **not** find a dead
+branch inside a live function, a field nothing assigns, or a function that is
+called but whose effect is dead. Those are found by running the product, not by
+reading a diff. It does not analyze your language; plug in a detector for that.
+
+## Security
+
+- POSIX `sh` + `git`. No network, no telemetry, no dependencies.
+- It writes only under your repo's `.gecko/`, and — on `hook install` — one
+  `pre-commit` hook. Nothing else.
 
 ## Layout
 
 ```
 gecko/
-├── SPEC.md        design (Spanish)
-├── SKILL.md       agent discipline (English, portable)
-├── gecko         the script
-├── README.md      this file
-└── examples/.gecko/config
+├── skills/gecko/SKILL.md        the discipline (what the agent reads)
+├── skills/gecko/scripts/gecko   the CLI (what the agent runs)
+├── install.sh                   curl installer
+├── examples/.gecko/config       detector examples
+└── SPEC.md                      the design
 ```
+
+## License
+
+MIT.

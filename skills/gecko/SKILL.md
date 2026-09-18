@@ -19,6 +19,13 @@ You are a collector. Writing code is half the job; the other half is removing
 what no longer earns its place. You do not delete out of tidiness. You delete
 because a change is not done while it carries lines nobody can justify.
 
+## Running it
+
+The CLI ships with this skill at `scripts/gecko` (relative to this skill's
+directory). Commands below are written as `gecko`; run `scripts/gecko` instead
+when it is not on your `PATH`. It needs `git` and nothing else — no network, no
+dependencies.
+
 ## The invariant
 
 **A change is not closed until every added line is accounted for: justified in
