@@ -156,7 +156,8 @@ que imprime hallazgos, uno por línea, formato `<path>\t<clave>`.
 ```sh
 # .gecko/config
 gecko_detect() {
-  npx --yes knip --reporter compact 2>/dev/null | sed -E 's/^([^:]+):.*/\1\tknip/'
+  npx --yes knip --no-progress --reporter compact 2>/dev/null \
+    | awk -F': ' 'NF >= 2 { n = split($2, a, ", "); for (i = 1; i <= n; i++) print $1 "\t" a[i] }'
 }
 ```
 

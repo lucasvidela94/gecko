@@ -97,8 +97,10 @@ Define `gecko_detect()` to print one finding per line as `<path><TAB><finding>`:
 
 ```sh
 # .gecko/config — TypeScript/JavaScript
+# knip's compact reporter prints "<path>: <symbol>[, <symbol>]".
 gecko_detect() {
-  npx --yes knip --reporter compact 2>/dev/null | sed -E 's/^([^:]+):.*/\1\tknip/'
+  npx --yes knip --no-progress --reporter compact 2>/dev/null \
+    | awk -F': ' 'NF >= 2 { n = split($2, a, ", "); for (i = 1; i <= n; i++) print $1 "\t" a[i] }'
 }
 ```
 
