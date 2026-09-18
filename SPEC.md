@@ -72,6 +72,7 @@ gecko/
 ├── README.md                  # instalación y uso
 ├── LICENSE
 ├── install.sh                 # instalador (curl-able)
+├── assets/                    # branding (mascota)
 ├── skills/gecko/
 │   ├── SKILL.md               # la disciplina (política) — en inglés
 │   └── scripts/gecko          # el CLI, POSIX sh, cero deps (mecanismo)

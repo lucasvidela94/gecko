@@ -1,15 +1,17 @@
-# gecko
-
-**Deletion as an output.** A portable skill + zero-dependency CLI that makes
-removing orphaned code a required step of every change.
+<div align="center">
+  <img src="assets/gecko.png" width="180" alt="gecko">
+  <h3>Deletion as an output.</h3>
+  <p>A portable skill + zero-dependency CLI that makes removing orphaned code<br>
+  a required step of every change.</p>
+  <p><em>He says nothing. He deletes what's dead. It still works.</em></p>
+  <a href="https://skills.sh/lucasvidela94/gecko"><img src="https://skills.sh/b/lucasvidela94/gecko" alt="skills.sh"></a>
+</div>
 
 Ponytail prevents at write time. Gecko collects at close time: before a change
 counts as done, every added line is either justified in writing or removed.
 
 Git is the memory (it survives compaction, restarts and harness changes). A
 ratchet is the enforcement (it refuses to let the debt grow).
-
-[![skills.sh](https://skills.sh/b/lucasvidela94/gecko)](https://skills.sh/lucasvidela94/gecko)
 
 ## Install
 
