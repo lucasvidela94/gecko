@@ -1,7 +1,7 @@
 #!/bin/sh
 # gecko — deletion as an output. POSIX sh + git, zero dependencies.
 #
-#   gecko review [--base REF] [--json]   show the diff as reap targets
+#   gecko review [--base REF] [--json] [--tests] [--all]
 #   gecko check                          ratchet: fail on new findings
 #   gecko baseline [--update]            regenerate the baseline
 #   gecko hook install|uninstall         git pre-commit hook
@@ -12,7 +12,7 @@
 set -eu
 
 PROG=gecko
-VERSION=0.2.0
+VERSION=0.3.0
 OWNER=lucasvidela94
 REPO=gecko
 TAB=$(printf '\t')
@@ -43,7 +43,8 @@ usage() {
 gecko — deletion as an output. POSIX sh + git, zero deps.
 
 usage:
-  gecko review [--base REF] [--json]   show the diff as reap targets
+  gecko review [--base REF] [--json] [--tests] [--all]
+                                       show the diff as reap targets
   gecko check                          ratchet: fail on new findings
   gecko baseline [--update]            regenerate the baseline
   gecko hook install|uninstall         git pre-commit hook
@@ -92,10 +93,14 @@ detect() {
 cmd_review() {
   base=HEAD
   json=0
+  show_tests=0
+  show_all=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --base) [ $# -ge 2 ] || die "--base requires a ref"; base=$2; shift 2 ;;
       --json) json=1; shift ;;
+      --tests) show_tests=1; shift ;;
+      --all) show_all=1; shift ;;
       -h|--help) usage; return 0 ;;
       *) die "review: unknown argument '$1'" ;;
     esac
@@ -111,9 +116,36 @@ cmd_review() {
   fi
   git ls-files --others --exclude-standard -- . ':(exclude).gecko/**' > "$tmp/untracked" 2>/dev/null || : > "$tmp/untracked"
 
-  # candidates: pure additions (added > 0, deleted == 0), ranked by size
+  # A brand-new file is all-additions by definition, so it is not a reap target.
+  # The interesting candidates are files that already existed and only grew.
+  : > "$tmp/newfiles"
+  if git rev-parse --verify -q "$base" >/dev/null 2>&1; then
+    git diff --name-only --diff-filter=A "$base" -- . ':(exclude).gecko/**' > "$tmp/newfiles"
+  fi
+
   awk -F'\t' '$1 ~ /^[0-9]+$/ && $1 > 0 && $2 == 0 { printf "%s\t%s\n", $1, $3 }' "$tmp/numstat" \
-    | sort -rn -k1,1 > "$tmp/cands"
+    | sort -rn -k1,1 > "$tmp/cands_raw"
+  while IFS="$TAB" read -r a p; do
+    if grep -Fxq "$p" "$tmp/newfiles" 2>/dev/null; then tag=new; else tag=grew; fi
+    printf '%s\t%s\t%s\n' "$tag" "$a" "$p"
+  done < "$tmp/cands_raw" > "$tmp/cands_tagged"
+
+  # test files are noise for a reap pass; hidden unless --tests
+  if [ "$show_tests" -eq 0 ]; then
+    awk -F'\t' '$3 ~ /(__tests__\/|\.test\.|\.spec\.)/ { n++ } END { printf "%d\n", n + 0 }' \
+      "$tmp/cands_tagged" > "$tmp/n_tests"
+    awk -F'\t' '$3 !~ /(__tests__\/|\.test\.|\.spec\.)/' "$tmp/cands_tagged" > "$tmp/cands"
+  else
+    printf '0\n' > "$tmp/n_tests"
+    cp "$tmp/cands_tagged" "$tmp/cands"
+  fi
+  n_tests=$(cat "$tmp/n_tests")
+
+  awk -F'\t' '$1 == "grew" { printf "%s\t%s\n", $2, $3 }' "$tmp/cands" > "$tmp/grew"
+  awk -F'\t' '$1 == "new"  { printf "%s\t%s\n", $2, $3 }' "$tmp/cands" > "$tmp/new"
+  n_grew=$(wc -l < "$tmp/grew" | tr -d ' ')
+  n_new=$(wc -l < "$tmp/new" | tr -d ' ')
+
   awk -F'\t' '$1 ~ /^[0-9]+$/ { printf "%s\t%s\t%s\n", $1, $2, $3 }' "$tmp/numstat" > "$tmp/touched"
   awk -F'\t' '$1 ~ /^[0-9]+$/ { a += $1; d += $2 } END { printf "%d\t%d\n", a, d }' "$tmp/numstat" > "$tmp/totals"
   read -r total_added total_deleted < "$tmp/totals"
@@ -127,16 +159,15 @@ cmd_review() {
     return 0
   fi
 
-  n_cands=$(wc -l < "$tmp/cands" | tr -d ' ')
-
   if [ "$json" -eq 1 ]; then
     esc() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
     ratio_json=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "null"; else printf "%.2f", a/d }')
-    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"candidates":[' "$base" "$total_added" "$total_deleted" "$ratio_json"
+    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"tests_hidden":%s,"grew":%s,"new":%s,"candidates":[' \
+      "$base" "$total_added" "$total_deleted" "$ratio_json" "$n_tests" "$n_grew" "$n_new"
     first=1
-    while IFS="$TAB" read -r a p; do
+    while IFS="$TAB" read -r tag a p; do
       if [ "$first" -eq 0 ]; then printf ','; fi; first=0
-      printf '{"path":"%s","added":%s}' "$(printf '%s' "$p" | esc)" "$a"
+      printf '{"path":"%s","added":%s,"kind":"%s"}' "$(printf '%s' "$p" | esc)" "$a" "$tag"
     done < "$tmp/cands"
     printf '],"touched":['
     first=1
@@ -158,27 +189,47 @@ cmd_review() {
 
   printf 'gecko review (base: %s)\n\n' "$base"
 
-  if [ -s "$tmp/cands" ]; then
-    printf 'CANDIDATES (added, nothing removed)\n'
+  if [ -s "$tmp/grew" ]; then
+    printf 'GREW (existed before, added lines, deleted none)\n'
     while IFS="$TAB" read -r a p; do
       printf '  %-44s +%-6s -0\n' "$p" "$a"
-    done < "$tmp/cands"
+    done < "$tmp/grew"
     printf '\n'
   fi
 
-  if [ -s "$tmp/touched" ]; then
-    printed=0
+  if [ -s "$tmp/new" ]; then
+    printf 'NEW FILES (all additions by definition)\n'
+    shown=0
+    while IFS="$TAB" read -r a p; do
+      if [ "$show_all" -eq 0 ] && [ "$shown" -ge 15 ]; then break; fi
+      printf '  %-44s +%-6s -0\n' "$p" "$a"
+      shown=$((shown + 1))
+    done < "$tmp/new"
+    if [ "$show_all" -eq 0 ] && [ "$n_new" -gt "$shown" ]; then
+      printf '  ... and %s more (--all)\n' "$((n_new - shown))"
+    fi
+    printf '\n'
+  fi
+
+  n_touched=$(awk -F'\t' '$1 ~ /^[0-9]+$/ && !($1 > 0 && $2 == 0)' "$tmp/touched" | wc -l | tr -d ' ')
+  if [ "$n_touched" -gt 0 ]; then
+    printf 'TOUCHED (added and removed)\n'
+    shown=0
     while IFS="$TAB" read -r a d p; do
       if [ "$a" -gt 0 ] && [ "$d" -eq 0 ]; then continue; fi
-      if [ "$printed" -eq 0 ]; then printf 'TOUCHED\n'; printed=1; fi
+      if [ "$show_all" -eq 0 ] && [ "$shown" -ge 20 ]; then break; fi
       net=$((a - d))
       if [ "$net" -lt 0 ]; then
         printf '  %-44s +%-6s -%-6s net %-6s shrunk\n' "$p" "$a" "$d" "$net"
       else
         printf '  %-44s +%-6s -%-6s net +%s\n' "$p" "$a" "$d" "$net"
       fi
+      shown=$((shown + 1))
     done < "$tmp/touched"
-    if [ "$printed" -eq 1 ]; then printf '\n'; fi
+    if [ "$show_all" -eq 0 ] && [ "$n_touched" -gt "$shown" ]; then
+      printf '  ... and %s more (--all)\n' "$((n_touched - shown))"
+    fi
+    printf '\n'
   fi
 
   if [ -s "$tmp/untracked" ]; then
@@ -191,7 +242,8 @@ cmd_review() {
   fi
 
   ratio=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "n/a"; else printf "%.1f", a/d }')
-  printf 'summary: +%s -%s  ratio %s:1  (candidates: %s)\n' "$total_added" "$total_deleted" "$ratio" "$n_cands"
+  printf 'summary: +%s -%s  ratio %s:1  (grew: %s, new: %s, tests hidden: %s)\n' \
+    "$total_added" "$total_deleted" "$ratio" "$n_grew" "$n_new" "$n_tests"
 }
 
 # --- ratchet ---------------------------------------------------------------

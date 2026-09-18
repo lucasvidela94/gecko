@@ -43,11 +43,13 @@ half with `--no-cli` / `--no-skill`.
 $ gecko review
 gecko review (base: HEAD)
 
-CANDIDATES (added, nothing removed)
-  src/csv.js                                   +18     -0
+GREW (existed before, added lines, deleted none)
   src/report.js                                +5      -0
 
-summary: +23 -0  ratio n/a:1  (candidates: 2)
+NEW FILES (all additions by definition)
+  src/csv.js                                   +18     -0
+
+summary: +23 -0  ratio n/a:1  (grew: 1, new: 1, tests hidden: 0)
 
 $ gecko check
 NEW findings (nothing references these):
@@ -61,7 +63,7 @@ $ gecko check
 no new findings
 
 $ gecko review
-CANDIDATES (added, nothing removed)
+NEW FILES (all additions by definition)
   src/csv.js                                   +9      -0     ← was +18
 ```
 
@@ -80,8 +82,10 @@ gecko hook install           # hard enforcement at commit time
 gecko self-update            # update the standalone CLI
 ```
 
-`review` is the reap pass. It flags **candidates** — files with additions and
-zero deletions — ranked by size, and prints the changeset ratio.
+`review` is the reap pass. It separates **GREW** — files that already existed and
+only gained lines, where dead code hides — from **NEW FILES**, which are all
+additions by definition. Test files are hidden unless `--tests`; long lists are
+capped unless `--all`.
 
 `check` is the ratchet. Pre-existing debt is frozen in `.gecko/baseline` and left
 alone; only **new** findings fail.

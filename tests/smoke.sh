@@ -28,6 +28,18 @@ printf '%s\n' "$review" | grep -q 'keep.txt' || fail "review missed the candidat
 printf '%s\n' "$review" | grep -q 'new.txt'  || fail "review missed untracked new.txt"
 pass "review lists candidates and untracked"
 
+# 1b. GREW (existed, only grew) is separated from NEW FILES (brand new)
+printf 'x\ny\n' > staged-new.txt
+git add staged-new.txt
+review="$("$GECKO" review)"
+printf '%s\n' "$review" | grep -q '^GREW'      || fail "review missing the GREW section"
+printf '%s\n' "$review" | grep -q '^NEW FILES' || fail "review missing the NEW FILES section"
+printf '%s\n' "$review" | awk '/^GREW/{g=1} /^NEW FILES/{g=0} g' | grep -q 'keep.txt' \
+  || fail "an existing file that only grew should be under GREW"
+printf '%s\n' "$review" | awk '/^NEW FILES/{n=1} /^untracked|^TOUCHED/{n=0} n' | grep -q 'staged-new.txt' \
+  || fail "a brand-new staged file should be under NEW FILES"
+pass "review separates GREW from NEW FILES"
+
 # 2. review --json is valid-ish and mentions the candidate
 "$GECKO" review --json | grep -q '"path":"keep.txt"' || fail "review --json missed the candidate"
 pass "review --json emits the candidate"

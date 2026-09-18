@@ -6,6 +6,18 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-18
+
+### Changed
+
+- `gecko review` now separates **GREW** (existing files that only gained lines —
+  where dead code hides) from **NEW FILES** (all additions by definition), and
+  puts GREW first. On a real 138-commit branch this took the output from 85
+  undifferentiated candidates to 18 actionable ones.
+- Test files are hidden unless `--tests`; the long secondary lists are capped
+  unless `--all`.
+- The summary now reports grew / new / tests hidden.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
@@ -30,6 +42,7 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skill + CLI. POSIX `sh` + `git`, zero dependencies.
 - `install.sh` and distribution through [skills.sh](https://skills.sh/lucasvidela94/gecko).
 
-[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lucasvidela94/gecko/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lucasvidela94/gecko/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucasvidela94/gecko/releases/tag/v0.1.0

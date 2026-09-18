@@ -104,10 +104,12 @@ Comportamiento:
   rango.
 - Usa `git diff --numstat` para archivos trackeados.
 - Lista archivos untracked aparte (con `wc -l`), porque `--numstat` no los ve.
-- **Candidato** = archivo con líneas agregadas y **cero borradas**. Son las
-  adiciones puras, la mayor sospecha.
-- Ordena candidatos por neto descendente.
-- Cierra con el resumen del changeset: total agregado, total borrado, ratio.
+- **Candidato** = archivo con líneas agregadas y **cero borradas**.
+- Separa **GREW** (ya existía y solo creció — donde se esconde el código muerto)
+  de **NEW FILES** (nuevo, todo adición por definición). GREW va primero.
+- Oculta tests (`__tests__/`, `.test.`, `.spec.`) salvo `--tests`. Capa las listas
+  secundarias salvo `--all`.
+- Cierra con el resumen: total agregado, total borrado, ratio, grew/new/tests.
 
 Salida (legible por agente, terse):
 
