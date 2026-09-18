@@ -98,9 +98,9 @@ cmd_review() {
 
   : > "$tmp/numstat"
   if git rev-parse --verify -q "$base" >/dev/null 2>&1; then
-    git diff --numstat "$base" > "$tmp/numstat"
+    git diff --numstat "$base" -- . ':(exclude).gecko/**' > "$tmp/numstat"
   fi
-  git ls-files --others --exclude-standard > "$tmp/untracked" 2>/dev/null || : > "$tmp/untracked"
+  git ls-files --others --exclude-standard -- . ':(exclude).gecko/**' > "$tmp/untracked" 2>/dev/null || : > "$tmp/untracked"
 
   # candidates: pure additions (added > 0, deleted == 0), ranked by size
   awk -F'\t' '$1 ~ /^[0-9]+$/ && $1 > 0 && $2 == 0 { printf "%s\t%s\n", $1, $3 }' "$tmp/numstat" \
