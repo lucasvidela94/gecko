@@ -1,6 +1,6 @@
-# Reaper — SPEC v0
+# Gecko — SPEC v0
 
-> La mitad que le falta a ponytail: ponytail **previene** en la escritura, reaper
+> La mitad que le falta a ponytail: ponytail **previene** en la escritura, gecko
 > **recolecta** al cerrar.
 
 Un artefacto portable (skill + script, cero dependencias) que hace que borrar
@@ -57,7 +57,7 @@ Excluido a propósito, con criterio de entrada para después:
 | Q1 | Objetivo | Cambio de conducta in-session (pase de borrado al cerrar), con el ratchet como red dura. Métrica: agregadas vs borradas. |
 | Q2 | Distribución | Portable, harness-agnostic. **Complementa** a gentle-ai (su ratchet estático sigue en CI); no lo reemplaza. |
 | Q3 | Detección | Procedencia, no call-graph. El call-graph se delega si el usuario lo enchufa. |
-| Q4 | Sustrato | Git + un archivo de baseline en el repo (`.reaper/baseline`), commiteado. |
+| Q4 | Sustrato | Git + un archivo de baseline en el repo (`.gecko/baseline`), commiteado. |
 | Q5 | Superficie de enforcement | Skill (convence) + script (mide) + **ratchet en git pre-commit / CI** (impide). |
 | Q6 | Memoria | Git (`diff` / `blame` / `log`). |
 | Q7 | Qué mide | `diff` como **disparador**, anotación como **detección**, detector externo como **enchufe opcional**. |
@@ -67,28 +67,28 @@ Excluido a propósito, con criterio de entrada para después:
 ## 5. Artefactos
 
 ```
-reaper/
+gecko/
 ├── SPEC.md            # este documento
 ├── SKILL.md           # la disciplina (política) — en inglés
-├── reaper             # script POSIX sh, cero deps (mecanismo)
+├── gecko             # script POSIX sh, cero deps (mecanismo)
 ├── README.md          # instalación portable + enganche en git/CI
 └── examples/
-    └── .reaper/       # config y baseline de ejemplo
+    └── .gecko/       # config y baseline de ejemplo
 ```
 
-El núcleo son dos archivos: `SKILL.md` (política) y `reaper` (mecanismo). El
+El núcleo son dos archivos: `SKILL.md` (política) y `gecko` (mecanismo). El
 resto es envoltorio.
 
 ## 6. Contrato del CLI
 
 ```
-reaper review [--base REF] [--json]   # input para el paso de recolección
-reaper check                          # el ratchet (exit 1 si hay hallazgos nuevos)
-reaper baseline [--update]            # regenera el baseline
-reaper hook install|uninstall         # hook de pre-commit (opcional)
+gecko review [--base REF] [--json]   # input para el paso de recolección
+gecko check                          # el ratchet (exit 1 si hay hallazgos nuevos)
+gecko baseline [--update]            # regenera el baseline
+gecko hook install|uninstall         # hook de pre-commit (opcional)
 ```
 
-### 6.1 `reaper review`
+### 6.1 `gecko review`
 
 Mide el diff actual y lo ordena para que el pase de borrado tenga un blanco
 concreto. No decide: muestra.
@@ -107,7 +107,7 @@ Comportamiento:
 Salida (legible por agente, terse):
 
 ```
-reaper review (base: HEAD)
+gecko review (base: HEAD)
 
 CANDIDATES (added, nothing removed)
   src/foo.ts        +142  -0   net +142
@@ -125,7 +125,7 @@ summary: +252 -52  ratio 4.8:1  (candidates: 2)
 
 `--json` para consumo programático.
 
-### 6.2 `reaper check` (el ratchet)
+### 6.2 `gecko check` (el ratchet)
 
 Corre los detectores, compara contra el baseline y **falla si aparecen hallazgos
 nuevos**. Es lo único duro del sistema, y vive donde vive git: pre-commit o CI.
@@ -143,22 +143,22 @@ Reglas (idénticas en filosofía al `deadcode-ratchet` de gentle-ai):
 
 ### 6.3 Detectores (la parte específica de lenguaje)
 
-`.reaper/config` es un shell que reaper sourcea. Puede definir `reaper_detect()`,
+`.gecko/config` es un shell que gecko sourcea. Puede definir `gecko_detect()`,
 que imprime hallazgos, uno por línea, formato `<path>\t<clave>`.
 
 ```sh
-# .reaper/config
-reaper_detect() {
+# .gecko/config
+gecko_detect() {
   npx --yes knip --reporter compact 2>/dev/null | sed -E 's/^([^:]+):.*/\1\tknip/'
 }
 ```
 
-Sin `reaper_detect()` definida, el detector por defecto es el **ratchet de
-anotaciones**: cuenta los marcadores `ponytail:` / `reaper:` sin resolver. Cero
+Sin `gecko_detect()` definida, el detector por defecto es el **ratchet de
+anotaciones**: cuenta los marcadores `ponytail:` / `gecko:` sin resolver. Cero
 configuración, agnóstico de lenguaje, y directamente sobre deuda.
 
 Detectores conocidos que el usuario puede enchufar: `knip` (TS/JS), `vulture`
-(Python), `deadcode` (Go), `cargo udeps` (Rust). Reaper no los instala ni los
+(Python), `deadcode` (Go), `cargo udeps` (Rust). Gecko no los instala ni los
 conoce: solo compara la lista antes y después.
 
 ## 7. La skill (`SKILL.md`)
@@ -170,12 +170,12 @@ Contenido mínimo:
 - **Invariante.** *"Un cambio no está cerrado hasta que cada línea agregada esté
   contabilizada: justificada por escrito, o borrada."*
 - **Procedimiento (el pase de recolección):**
-  1. Correr `reaper review` antes de declarar terminado.
+  1. Correr `gecko review` antes de declarar terminado.
   2. Por cada candidato: borrar lo que ya no tiene referente, o anotar la razón.
   3. Para adiciones que quedan, confirmar que su razón sigue en pie.
-  4. `reaper check` debe pasar.
-- **Convención de anotación.** Reutiliza `ponytail:`; agrega `reaper:` para
-  adiciones que se mantienen a propósito. Formato: `# reaper: <razón> — borrar
+  4. `gecko check` debe pasar.
+- **Convención de anotación.** Reutiliza `ponytail:`; agrega `gecko:` para
+  adiciones que se mantienen a propósito. Formato: `# gecko: <razón> — borrar
   cuando <condición>`.
 - **Niveles.** `lite` / `full` / `ultra`, paridad con ponytail.
 - **Límites honestos.** No detecta ramas muertas, campos nunca asignados, ni
@@ -185,18 +185,18 @@ Contenido mínimo:
 
 | Capa | Cómo |
 |---|---|
-| Skill | Copiar `SKILL.md` a `~/.config/opencode/skills/reaper/`, `~/.claude/skills/reaper/`, `~/.codex/skills/reaper/`, o pegar el bloque en `AGENTS.md` / `CLAUDE.md` / reglas. |
-| Script | `scripts/reaper` en el repo, o `reaper` en el PATH. |
-| Duro | `reaper hook install` (pre-commit) o un paso de CI. |
+| Skill | Copiar `SKILL.md` a `~/.config/opencode/skills/gecko/`, `~/.claude/skills/gecko/`, `~/.codex/skills/gecko/`, o pegar el bloque en `AGENTS.md` / `CLAUDE.md` / reglas. |
+| Script | `scripts/gecko` en el repo, o `gecko` en el PATH. |
+| Duro | `gecko hook install` (pre-commit) o un paso de CI. |
 
 El `SKILL.md` no se toca al cambiar de harness. Esa es la prueba de portabilidad.
 
 ## 9. Criterio de éxito
 
 - Corre en POSIX sh + git, sin red y sin instalar nada.
-- `reaper review` sobre un diff real marca exactamente los archivos que un humano
+- `gecko review` sobre un diff real marca exactamente los archivos que un humano
   marcaría como adiciones puras.
-- `reaper check` falla ante una función muerta recién introducida (con detector
+- `gecko check` falla ante una función muerta recién introducida (con detector
   Go) y pasa en el baseline.
 - El mismo `SKILL.md`, sin cambios, se usa en ≥ 2 harnesses.
 - Una sesión que siga la skill termina con borrados o con razones escritas —
@@ -207,7 +207,7 @@ El `SKILL.md` no se toca al cambiar de harness. Esa es la prueba de portabilidad
 Criterio de entrada: v0 en uso real y su límite conocido.
 
 - **Nivel 2.** Presets de detectores por lenguaje; salida `--json` estable;
-  ledger por commit (`reaper log`) que mapea adiciones a commits.
+  ledger por commit (`gecko log`) que mapea adiciones a commits.
 - **Nivel 3.** Provenance por intención: ligar adiciones a una tarea/spec y
   marcar huérfanas cuando la tarea desaparece. Adapters opcionales de harness
   (plugin opencode V2, hooks de Claude) como *acelerador*, nunca como requisito.

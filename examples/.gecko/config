@@ -1,0 +1,33 @@
+# .gecko/config — optional. Sourced by `gecko check` / `gecko baseline`.
+#
+# Define gecko_detect() to print findings, one per line, as:
+#     <path><TAB><finding-key>
+#
+# Keys must be stable: no line numbers or columns, or every edit above a
+# finding registers as a new one.
+#
+# If you do not define gecko_detect(), gecko uses its built-in annotation
+# ratchet (unresolved `ponytail:` / `gecko:` markers). Zero config, any
+# language.
+
+# --- TypeScript / JavaScript -------------------------------------------------
+# gecko_detect() {
+#   npx --yes knip --reporter compact 2>/dev/null | sed -E 's/^([^:]+):.*/\1\tknip/'
+# }
+
+# --- Python ------------------------------------------------------------------
+# gecko_detect() {
+#   vulture . 2>/dev/null | awk '{print $1 "\tvulture"}'
+# }
+
+# --- Go ----------------------------------------------------------------------
+# gecko_detect() {
+#   go run golang.org/x/tools/cmd/deadcode@latest ./... 2>/dev/null \
+#     | sed -E 's/^(.+):[0-9]+:[0-9]+: unreachable func: (.+)$/\1\t\2/'
+# }
+
+# --- Multiple detectors ------------------------------------------------------
+# gecko_detect() {
+#   npx --yes knip --reporter compact 2>/dev/null | sed -E 's/^([^:]+):.*/\1\tknip/'
+#   git grep -nE '(TODO|FIXME)' -- . 2>/dev/null | sed -E 's/^([^:]+):[0-9]+:.*/\1\ttodo/'
+# }

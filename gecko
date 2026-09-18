@@ -1,0 +1,281 @@
+#!/bin/sh
+# gecko — deletion as an output. POSIX sh + git, zero dependencies.
+#
+#   gecko review [--base REF] [--json]   show the diff as reap targets
+#   gecko check                          ratchet: fail on new findings
+#   gecko baseline [--update]            regenerate the baseline
+#   gecko hook install|uninstall         git pre-commit hook
+#   gecko help
+#
+# State lives in <repo>/.gecko/ : config (optional) and baseline (committed).
+
+set -eu
+
+PROG=gecko
+TAB=$(printf '\t')
+
+die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+
+repo_root() { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repository"; }
+gecko_dir() { printf '%s/.gecko\n' "$(repo_root)"; }
+
+self_path() {
+  case "$0" in
+    /*) printf '%s\n' "$0" ;;
+    *) printf '%s/%s\n' "$(pwd)" "$0" ;;
+  esac
+}
+
+load_config() {
+  cfg="$(gecko_dir)/config"
+  if [ -f "$cfg" ]; then . "$cfg"; fi
+}
+
+usage() {
+  cat <<'EOF'
+gecko — deletion as an output. POSIX sh + git, zero deps.
+
+usage:
+  gecko review [--base REF] [--json]   show the diff as reap targets
+  gecko check                          ratchet: fail on new findings
+  gecko baseline [--update]            regenerate the baseline
+  gecko hook install|uninstall         git pre-commit hook
+  gecko help
+
+config:   .gecko/config may define gecko_detect() printing "<path><TAB><finding>".
+baseline: .gecko/baseline (commit it).
+EOF
+}
+
+# --- detection -------------------------------------------------------------
+
+# Default detector: the annotation ratchet. Counts unresolved `ponytail:` /
+# `gecko:` markers. Language-agnostic, zero config. Normalized to
+# "<path><TAB><reason>" so moving a line does not register as a new finding.
+gecko_detect_default() {
+  git grep -nE '(ponytail|gecko):' -- . 2>/dev/null | awk '
+    {
+      i = index($0, ":")
+      if (i == 0) next
+      p = substr($0, 1, i-1)
+      rest = substr($0, i+1)
+      j = index(rest, ":")
+      if (j == 0) next
+      s = substr(rest, j+1)
+      if (match(s, /(ponytail|gecko):[[:space:]]*/)) {
+        t = substr(s, RSTART+RLENGTH)
+        sub(/[[:space:]]+$/, "", t)
+        print p "\t" t
+      }
+    }'
+}
+
+detect() {
+  if command -v gecko_detect >/dev/null 2>&1; then
+    gecko_detect
+  else
+    gecko_detect_default
+  fi
+}
+
+# --- review ----------------------------------------------------------------
+
+cmd_review() {
+  base=HEAD
+  json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) [ $# -ge 2 ] || die "--base requires a ref"; base=$2; shift 2 ;;
+      --json) json=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) die "review: unknown argument '$1'" ;;
+    esac
+  done
+
+  root=$(repo_root); cd "$root" || die "cannot cd to repo root"
+  tmp=$(mktemp -d) || die "mktemp failed"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  : > "$tmp/numstat"
+  if git rev-parse --verify -q "$base" >/dev/null 2>&1; then
+    git diff --numstat "$base" > "$tmp/numstat"
+  fi
+  git ls-files --others --exclude-standard > "$tmp/untracked" 2>/dev/null || : > "$tmp/untracked"
+
+  # candidates: pure additions (added > 0, deleted == 0), ranked by size
+  awk -F'\t' '$1 ~ /^[0-9]+$/ && $1 > 0 && $2 == 0 { printf "%s\t%s\n", $1, $3 }' "$tmp/numstat" \
+    | sort -rn -k1,1 > "$tmp/cands"
+  awk -F'\t' '$1 ~ /^[0-9]+$/ { printf "%s\t%s\t%s\n", $1, $2, $3 }' "$tmp/numstat" > "$tmp/touched"
+  awk -F'\t' '$1 ~ /^[0-9]+$/ { a += $1; d += $2 } END { printf "%d\t%d\n", a, d }' "$tmp/numstat" > "$tmp/totals"
+  read -r total_added total_deleted < "$tmp/totals"
+
+  if [ ! -s "$tmp/numstat" ] && [ ! -s "$tmp/untracked" ]; then
+    if [ "$json" -eq 1 ]; then
+      printf '{"base":"%s","clean":true}\n' "$base"
+    else
+      printf 'gecko review (base: %s)\n\nclean — nothing to reap.\n' "$base"
+    fi
+    return 0
+  fi
+
+  n_cands=$(wc -l < "$tmp/cands" | tr -d ' ')
+
+  if [ "$json" -eq 1 ]; then
+    esc() { sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+    ratio_json=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "null"; else printf "%.2f", a/d }')
+    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"candidates":[' "$base" "$total_added" "$total_deleted" "$ratio_json"
+    first=1
+    while IFS="$TAB" read -r a p; do
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","added":%s}' "$(printf '%s' "$p" | esc)" "$a"
+    done < "$tmp/cands"
+    printf '],"touched":['
+    first=1
+    while IFS="$TAB" read -r a d p; do
+      if [ "$a" -gt 0 ] && [ "$d" -eq 0 ]; then continue; fi
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","added":%s,"deleted":%s}' "$(printf '%s' "$p" | esc)" "$a" "$d"
+    done < "$tmp/touched"
+    printf '],"untracked":['
+    first=1
+    while IFS= read -r f; do
+      n=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || printf '0')
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","lines":%s}' "$(printf '%s' "$f" | esc)" "$n"
+    done < "$tmp/untracked"
+    printf ']}\n'
+    return 0
+  fi
+
+  printf 'gecko review (base: %s)\n\n' "$base"
+
+  if [ -s "$tmp/cands" ]; then
+    printf 'CANDIDATES (added, nothing removed)\n'
+    while IFS="$TAB" read -r a p; do
+      printf '  %-44s +%-6s -0\n' "$p" "$a"
+    done < "$tmp/cands"
+    printf '\n'
+  fi
+
+  if [ -s "$tmp/touched" ]; then
+    printed=0
+    while IFS="$TAB" read -r a d p; do
+      if [ "$a" -gt 0 ] && [ "$d" -eq 0 ]; then continue; fi
+      if [ "$printed" -eq 0 ]; then printf 'TOUCHED\n'; printed=1; fi
+      net=$((a - d))
+      if [ "$net" -lt 0 ]; then
+        printf '  %-44s +%-6s -%-6s net %-6s shrunk\n' "$p" "$a" "$d" "$net"
+      else
+        printf '  %-44s +%-6s -%-6s net +%s\n' "$p" "$a" "$d" "$net"
+      fi
+    done < "$tmp/touched"
+    if [ "$printed" -eq 1 ]; then printf '\n'; fi
+  fi
+
+  if [ -s "$tmp/untracked" ]; then
+    printf 'untracked (not in --numstat)\n'
+    while IFS= read -r f; do
+      n=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || printf '?')
+      printf '  %-44s +%s\n' "$f" "$n"
+    done < "$tmp/untracked"
+    printf '\n'
+  fi
+
+  ratio=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "n/a"; else printf "%.1f", a/d }')
+  printf 'summary: +%s -%s  ratio %s:1  (candidates: %s)\n' "$total_added" "$total_deleted" "$ratio" "$n_cands"
+}
+
+# --- ratchet ---------------------------------------------------------------
+
+cmd_check() {
+  root=$(repo_root); cd "$root" || die "cannot cd to repo root"
+  load_config
+  dir=$(gecko_dir)
+  baseline="$dir/baseline"
+  tmp=$(mktemp -d) || die "mktemp failed"
+  trap 'rm -rf "$tmp"' EXIT INT TERM
+
+  detect > "$tmp/raw" 2>/dev/null || true
+  LC_ALL=C sort -u "$tmp/raw" > "$tmp/current"
+
+  if [ ! -f "$baseline" ]; then
+    printf '%s: no baseline at %s\n' "$PROG" "$baseline" >&2
+    printf 'run: %s baseline --update\n' "$PROG" >&2
+    exit 1
+  fi
+  LC_ALL=C sort -u "$baseline" > "$tmp/base"
+
+  # lower collation pinned: comm silently produces nonsense across locales
+  gone=$(LC_ALL=C comm -23 "$tmp/base" "$tmp/current" || true)
+  new=$(LC_ALL=C comm -13 "$tmp/base" "$tmp/current" || true)
+
+  if [ -n "$gone" ]; then
+    n_gone=$(printf '%s\n' "$gone" | grep -c . || true)
+    printf 'note: %s baselined finding(s) are gone. Tighten with: %s baseline --update\n\n' "$n_gone" "$PROG"
+  fi
+
+  if [ -n "$new" ]; then
+    printf 'NEW findings (nothing references these):\n\n' >&2
+    printf '%s\n' "$new" | sed 's/^/  /' >&2
+    printf '\nWire it up, delete it, or update the baseline saying why in the commit.\n' >&2
+    exit 1
+  fi
+
+  printf 'no new findings\n'
+}
+
+cmd_baseline() {
+  root=$(repo_root); cd "$root" || die "cannot cd to repo root"
+  load_config
+  dir=$(gecko_dir)
+  mkdir -p "$dir"
+  detect | LC_ALL=C sort -u > "$dir/baseline"
+  n=$(grep -c . "$dir/baseline" || true)
+  printf 'baseline updated: %s entries -> %s\n' "$n" "$dir/baseline"
+}
+
+# --- hook ------------------------------------------------------------------
+
+cmd_hook() {
+  action=${1:-}
+  root=$(repo_root); cd "$root" || die "cannot cd to repo root"
+  hook="$root/.git/hooks/pre-commit"
+  marker='# gecko:ratchet'
+
+  case "$action" in
+    install)
+      if [ -f "$hook" ] && ! grep -qF "$marker" "$hook"; then
+        die "pre-commit already exists and is not ours; add this line manually: $marker"
+      fi
+      abs=$(self_path)
+      mkdir -p "$root/.git/hooks"
+      {
+        printf '#!/bin/sh\n'
+        printf '%s\n' "$marker"
+        printf 'exec "%s" check\n' "$abs"
+      } > "$hook"
+      chmod +x "$hook"
+      printf 'installed pre-commit hook -> %s\n' "$hook"
+      ;;
+    uninstall)
+      if [ -f "$hook" ] && grep -qF "$marker" "$hook"; then
+        rm -f "$hook"
+        printf 'removed pre-commit hook\n'
+      else
+        printf 'no gecko hook installed\n'
+      fi
+      ;;
+    *) die "hook: expected install|uninstall" ;;
+  esac
+}
+
+# --- dispatch --------------------------------------------------------------
+
+case "${1:-help}" in
+  review) shift; cmd_review "$@" ;;
+  check) shift; cmd_check "$@" ;;
+  baseline|--update) shift; cmd_baseline "$@" ;;
+  hook) shift; cmd_hook "$@" ;;
+  help|-h|--help) usage ;;
+  *) die "unknown command '$1' (try: $PROG help)" ;;
+esac
