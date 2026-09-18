@@ -67,7 +67,10 @@ if [ "$DO_CLI" -eq 1 ]; then
   printf 'installed CLI: %s/%s (%s)\n' "$BIN_DIR" "$PROG" "$VERSION"
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
-    *) printf 'note: %s is not on your PATH. Add:\n  export PATH="%s:$PATH"\n' "$BIN_DIR" "$BIN_DIR" ;;
+    *)
+      # shellcheck disable=SC2016  # the $PATH is meant to be printed literally
+      printf 'note: %s is not on your PATH. Add:\n  export PATH="%s:$PATH"\n' "$BIN_DIR" "$BIN_DIR"
+      ;;
   esac
 fi
 

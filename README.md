@@ -4,14 +4,20 @@
   <p>A portable skill + zero-dependency CLI that makes removing orphaned code<br>
   a required step of every change.</p>
   <p><em>He says nothing. He deletes what's dead. It still works.</em></p>
-  <a href="https://skills.sh/lucasvidela94/gecko"><img src="https://skills.sh/b/lucasvidela94/gecko" alt="skills.sh"></a>
+  <p>
+    <a href="https://github.com/lucasvidela94/gecko/releases"><img src="https://img.shields.io/github/v/release/lucasvidela94/gecko?color=8FAE8B&labelColor=1b1b1b" alt="release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/lucasvidela94/gecko?color=8FAE8B&labelColor=1b1b1b" alt="license"></a>
+    <a href="https://github.com/lucasvidela94/gecko/actions/workflows/ci.yml"><img src="https://github.com/lucasvidela94/gecko/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://skills.sh/lucasvidela94/gecko"><img src="https://skills.sh/b/lucasvidela94/gecko" alt="skills.sh"></a>
+    <a href="https://github.com/lucasvidela94/gecko/stargazers"><img src="https://img.shields.io/github/stars/lucasvidela94/gecko?color=8FAE8B&labelColor=1b1b1b" alt="stars"></a>
+  </p>
 </div>
 
-Ponytail prevents at write time. Gecko collects at close time: before a change
-counts as done, every added line is either justified in writing or removed.
+Ponytail prevents at write time. **Gecko collects at close time.** Before a change
+counts as done, every added line is either justified in writing, or removed.
 
-Git is the memory (it survives compaction, restarts and harness changes). A
-ratchet is the enforcement (it refuses to let the debt grow).
+Git is the memory — it survives compaction, restarts and harness changes. A
+ratchet is the enforcement — it refuses to let the debt grow.
 
 ## Install
 
@@ -20,9 +26,9 @@ npx skills add lucasvidela94/gecko -g -y
 ```
 
 That installs the skill — and its CLI — into every agent it finds: OpenCode,
-Claude Code, Codex, Cursor and 75 more. No other setup.
+Claude Code, Codex, Cursor and [75+ more](https://skills.sh). No other setup.
 
-Want `gecko` on your `PATH` too, or no Node? Either works, or both:
+Want `gecko` on your `PATH` too, or no Node?
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lucasvidela94/gecko/main/install.sh | sh
@@ -31,27 +37,36 @@ curl -fsSL https://raw.githubusercontent.com/lucasvidela94/gecko/main/install.sh
 Pin a version with `--version v0.2.0`, choose a bin dir with `--bin DIR`, skip a
 half with `--no-cli` / `--no-skill`.
 
-## Update
+## Demo
 
-Two things can be updated, and they update differently.
+```console
+$ gecko review
+gecko review (base: HEAD)
 
-**Installed with `npx skills`** — the skills CLI owns both the skill and the CLI
-inside it:
+CANDIDATES (added, nothing removed)
+  src/csv.js                                   +18     -0
+  src/report.js                                +5      -0
 
-```bash
-npx skills update
+summary: +23 -0  ratio n/a:1  (candidates: 2)
+
+$ gecko check
+NEW findings (nothing references these):
+
+  src/csv.js    legacyExport kept for the old CLI — remove when the old CLI is gone
+
+Wire it up, delete it, or update the baseline saying why in the commit.
+
+$ # delete what's dead, then:
+$ gecko check
+no new findings
+
+$ gecko review
+CANDIDATES (added, nothing removed)
+  src/csv.js                                   +9      -0     ← was +18
 ```
 
-**CLI on your `PATH`** (the `install.sh` way):
-
-```bash
-gecko self-update          # fetch the latest release
-gecko self-update --check  # just report, change nothing
-```
-
-`self-update` refuses to touch a copy that lives inside a skill folder — that
-one belongs to the skills CLI. It also refuses to downgrade. Updates come from
-GitHub releases over `curl`; the core commands stay offline.
+Nine dead lines gone, no live line touched. `gecko hook install` makes the last
+step impossible to skip — the commit is blocked until `check` passes.
 
 ## Use
 
@@ -62,27 +77,14 @@ gecko review --json          # machine-readable
 gecko check                  # ratchet: fail on new findings
 gecko baseline --update      # freeze current findings as the baseline
 gecko hook install           # hard enforcement at commit time
+gecko self-update            # update the standalone CLI
 ```
 
 `review` is the reap pass. It flags **candidates** — files with additions and
-zero deletions — ranked by size, and prints the changeset ratio:
-
-```
-gecko review (base: HEAD)
-
-CANDIDATES (added, nothing removed)
-  src/foo.ts                                   +142   -0
-  src/bar.ts                                   +18    -0
-
-summary: +252 -52  ratio 4.8:1  (candidates: 2)
-```
+zero deletions — ranked by size, and prints the changeset ratio.
 
 `check` is the ratchet. Pre-existing debt is frozen in `.gecko/baseline` and left
-alone; only **new** findings fail. It refuses growth, not existence — a gate that
-demands zero never activates, because the pre-existing debt blocks it.
-
-`hook install` writes a `pre-commit` that runs `check`. The agent can ignore the
-skill; git cannot ignore the hook.
+alone; only **new** findings fail.
 
 ## Detectors
 
@@ -114,6 +116,24 @@ When an addition stays on purpose, say why, in the code:
 False annotations are worse than dead code, because they look handled. Gecko's
 ratchet counts them, so the excuse has to be honest.
 
+## How it works
+
+- **Git is the memory.** No session ledger to lose. `blame`, `log` and `diff`
+  survive compaction, restarts and switching agents.
+- **Ratchet, not gate.** Demanding zero dead code means the guard never turns on,
+  because the pre-existing debt blocks it. Gecko freezes what exists and refuses
+  growth — the part that pays for itself.
+- **Two layers.** The skill convinces inside the session; the pre-commit hook and
+  CI enforce regardless of what the model decided.
+- **Portable.** The same `SKILL.md` works unchanged across every agent. That is
+  the point, and the test.
+
+## Works with
+
+OpenCode · Claude Code · Codex · Cursor · GitHub Copilot · Windsurf · Cline ·
+Gemini CLI · Kiro · Zed · AMP · Goose · and [75+ more](https://skills.sh) —
+one command, no per-agent setup.
+
 ## What it does not do
 
 Gecko finds orphaned additions and annotation debt. It does **not** find a dead
@@ -121,23 +141,38 @@ branch inside a live function, a field nothing assigns, or a function that is
 called but whose effect is dead. Those are found by running the product, not by
 reading a diff. It does not analyze your language; plug in a detector for that.
 
+## Update
+
+Installed with `npx skills`? The skills CLI owns both the skill and its CLI:
+
+```bash
+npx skills update
+```
+
+CLI on your `PATH`? Then:
+
+```bash
+gecko self-update          # fetch the latest release
+gecko self-update --check  # just report, change nothing
+```
+
 ## Security
 
 - POSIX `sh` + `git`. No network, no telemetry, no dependencies.
 - It writes only under your repo's `.gecko/`, and — on `hook install` — one
   `pre-commit` hook. Nothing else.
+- `self-update` is the only command that touches the network, and it fetches
+  from this repository's GitHub releases.
 
-## Layout
+## Contributing
 
-```
-gecko/
-├── skills/gecko/SKILL.md        the discipline (what the agent reads)
-├── skills/gecko/scripts/gecko   the CLI (what the agent runs)
-├── install.sh                   curl installer
-├── examples/.gecko/config       detector examples
-└── SPEC.md                      the design
-```
+Small diffs, POSIX `sh`, no dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Run `sh tests/smoke.sh` — CI runs the same.
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).
+
+---
+
+<sub>If gecko deleted a few lines you were going to keep, a ⭐ helps others find it. Pairs with <a href="https://github.com/DietrichGebert/ponytail">ponytail</a>.</sub>

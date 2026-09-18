@@ -32,7 +32,10 @@ self_path() {
 
 load_config() {
   cfg="$(gecko_dir)/config"
-  if [ -f "$cfg" ]; then . "$cfg"; fi
+  if [ -f "$cfg" ]; then
+    # shellcheck source=/dev/null
+    . "$cfg"
+  fi
 }
 
 usage() {
