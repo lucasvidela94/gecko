@@ -183,4 +183,28 @@ rm -f src/hidden.test.ts
 git rm -q -f tests/smoke.sh test_foo.py src/foo_test.go
 pass "test globs hide tests/, test_*, *_test.go, and untracked tests"
 
+# 14. ORPHANS: a replacement that drops an import leaves the old module (and its private dep)
+mkdir -p src/services src/screens
+printf 'export const fooClient = { get: function () { return 1 } }\n' > src/services/fooClient.ts
+printf 'import { fooClient } from "./fooClient"\nexport const fooService = { load: function () { return fooClient.get() } }\n' > src/services/fooService.ts
+printf 'import { fooService } from "../services/fooService"\nexport const page = fooService.load()\n' > src/screens/page.ts
+git add src/services/fooClient.ts src/services/fooService.ts src/screens/page.ts
+git commit -q -m 'foo stack'
+printf 'export const useFooQuery = function () { return 1 }\nexport const page = useFooQuery()\n' > src/screens/page.ts
+orphans="$("$GECKO" review)"
+printf '%s\n' "$orphans" | grep -q '^ORPHANS' || fail "review missing the ORPHANS section after a dropped import"
+printf '%s\n' "$orphans" | grep -q 'fooService' || fail "dropped fooService import should list fooService as an orphan"
+printf '%s\n' "$orphans" | grep -q 'fooClient' || fail "fooClient, only used by the orphan service, should be hop 1"
+"$GECKO" review --json | grep -q '"path":"src/services/fooService.ts"' \
+  || fail "review --json should emit the orphan path"
+pass "review lists ORPHANS for a replaced import and one hop"
+
+# 14b. another remaining caller means it is not an orphan
+printf 'import { fooService } from "../services/fooService"\nexport const other = fooService.load()\n' > src/screens/other.ts
+git add src/screens/other.ts
+still="$("$GECKO" review)"
+printf '%s\n' "$still" | grep -q 'fooService' && fail "fooService must not be an orphan while other.ts still imports it"
+git rm -q -f src/screens/other.ts
+pass "ORPHANS skips modules that still have a caller"
+
 printf '\nall smoke tests passed\n'

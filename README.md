@@ -84,10 +84,11 @@ gecko hook install           # hard enforcement at commit time
 gecko self-update            # update the standalone CLI
 ```
 
-`review` is the reap pass. It separates **GREW** — files that already existed and
-only gained lines, where dead code hides — from **NEW FILES**, which are all
-additions by definition. Test files are hidden unless `--tests`; long lists are
-capped unless `--all`.
+`review` is the reap pass. **ORPHANS** come first: modules that lost their last
+caller in this diff (a hook that replaced a service), plus one hop of their
+private imports. Then **GREW** — files that already existed and only gained
+lines — and **NEW FILES**, which are all additions by definition. Test files are
+hidden unless `--tests`; long lists are capped unless `--all`.
 
 `check` is the ratchet. Pre-existing debt is frozen in `.gecko/baseline` and left
 alone; only **new** findings fail.
@@ -168,10 +169,12 @@ one command, no per-agent setup.
 
 ## What it does not do
 
-Gecko finds orphaned additions and annotation debt. It does **not** find a dead
-branch inside a live function, a field nothing assigns, or a function that is
-called but whose effect is dead. Those are found by running the product, not by
-reading a diff. It does not analyze your language; plug in a detector for that.
+Gecko finds orphaned additions, leftover modules after a replacement, and
+annotation debt. It does **not** find a dead branch inside a live function, a
+field nothing assigns, or a function that is called but whose effect is dead.
+Those are found by running the product, not by reading a diff. It does not
+analyze your language; plug in a detector for that. ORPHANS is an import
+heuristic, not a call graph.
 
 ## Update
 

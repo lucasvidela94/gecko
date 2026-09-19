@@ -6,6 +6,21 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-19
+
+### Added
+
+- `gecko review` prints **ORPHANS**: modules whose last caller dropped them in
+  this diff, plus one hop of *their* private imports. Replacement refactors
+  (a React Query hook that leaves the old service behind) now have a target
+  list outside the diff. `--json` adds `"orphans"` and `"orphan_files"`.
+
+### Changed
+
+- `SKILL.md` rewritten as a reap pass: steps with completion criteria first,
+  description as a short trigger pointer (`reap` / ORPHANS / close), CLI help
+  left to the environment.
+
 ## [0.7.0] - 2026-09-18
 
 ### Added
@@ -97,7 +112,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skill + CLI. POSIX `sh` + `git`, zero dependencies.
 - `install.sh` and distribution through [skills.sh](https://skills.sh/lucasvidela94/gecko).
 
-[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/lucasvidela94/gecko/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/lucasvidela94/gecko/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/lucasvidela94/gecko/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/lucasvidela94/gecko/compare/v0.4.0...v0.5.0

@@ -12,7 +12,7 @@
 set -eu
 
 PROG=gecko
-VERSION=0.7.0
+VERSION=0.8.0
 OWNER=lucasvidela94
 REPO=gecko
 TAB=$(printf '\t')
@@ -129,6 +129,284 @@ warn_no_detector() {
   printf '%s: add gecko_detect() to .gecko/config for real dead-code detection (GECKO_QUIET=1 silences this).\n' "$PROG" >&2
 }
 
+norm_path() {
+  printf '%s\n' "$1" | awk -F/ '{
+    n = 0
+    for (i = 1; i <= NF; i++) {
+      if ($i == "" || $i == ".") continue
+      if ($i == "..") { if (n > 0) n--; continue }
+      n++
+      s[n] = $i
+    }
+    out = ""
+    for (i = 1; i <= n; i++) out = out s[i] "/"
+    if (out == "") print "."
+    else { sub(/\/$/, "", out); print out }
+  }'
+}
+
+try_file() {
+  p=$1
+  for c in "$p" "$p.ts" "$p.tsx" "$p.js" "$p.jsx" "$p.mjs" "$p.cjs" "$p.py" \
+    "$p/index.ts" "$p/index.tsx" "$p/index.js" "$p/index.mjs" "$p/__init__.py"; do
+    if [ -f "$c" ]; then
+      printf '%s\n' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolve_spec() {
+  from=$1
+  spec=$2
+  hit=
+  case "$spec" in
+    ''|'.'|'..') return 1 ;;
+    @/*)
+      rest=${spec#@/}
+      for p in "$rest" "src/$rest" "app/$rest" "lib/$rest"; do
+        hit=$(try_file "$p" || true)
+        if [ -n "$hit" ]; then printf '%s\n' "$hit"; return 0; fi
+      done
+      return 1
+      ;;
+    ~/*)
+      hit=$(try_file "${spec#~/}" || true)
+      if [ -n "$hit" ]; then printf '%s\n' "$hit"; return 0; fi
+      return 1
+      ;;
+    ./*|../*)
+      hit=$(try_file "$(norm_path "$(dirname "$from")/$spec")" || true)
+      if [ -n "$hit" ]; then printf '%s\n' "$hit"; return 0; fi
+      return 1
+      ;;
+    @*) return 1 ;;
+    *.*)
+      py=$(printf '%s\n' "$spec" | tr '.' '/')
+      hit=$(try_file "$py" || true)
+      if [ -n "$hit" ]; then printf '%s\n' "$hit"; return 0; fi
+      return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+extract_specs() {
+  awk '
+    function spec_from(line,   s) {
+      if (match(line, /from[[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^from[[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /from[[:space:]]+\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^from[[:space:]]+\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (match(line, /require[[:space:]]*\([[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^require[[:space:]]*\([[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /require[[:space:]]*\([[:space:]]*\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^require[[:space:]]*\([[:space:]]*\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (match(line, /import[[:space:]]*\([[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^import[[:space:]]*\([[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /import[[:space:]]*\([[:space:]]*\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^import[[:space:]]*\([[:space:]]*\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (line ~ /^[[:space:]]*from[[:space:]]+[A-Za-z_.\/]+[[:space:]]+import[[:space:]]/) {
+        s = line
+        sub(/^[[:space:]]*from[[:space:]]+/, "", s)
+        sub(/[[:space:]]+import[[:space:]].*/, "", s)
+        return s
+      }
+      return ""
+    }
+    {
+      s = spec_from($0)
+      if (s != "") print s
+    }
+  '
+}
+
+files_mentioning() {
+  needle=$1
+  [ -n "$needle" ] || return 0
+  git grep -l -F -e "$needle" -- . ':(exclude).gecko/**' 2>/dev/null || true
+}
+
+orphan_has_callers() {
+  resolved=$1
+  exclude=$2
+  base_no_ext=${resolved%.*}
+  bn=$(basename "$base_no_ext")
+  if [ "$bn" = "index" ] || [ "$bn" = "__init__" ]; then
+    bn=$(basename "$(dirname "$resolved")")
+  fi
+  {
+    files_mentioning "$base_no_ext"
+    files_mentioning "$bn"
+  } | LC_ALL=C sort -u > "$tmp/hits"
+  n_callers=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$f" = "$resolved" ] && continue
+    grep -Fxq "$f" "$exclude" 2>/dev/null && continue
+    n_callers=$((n_callers + 1))
+  done < "$tmp/hits"
+  [ "$n_callers" -gt 0 ]
+}
+
+add_orphan() {
+  hop=$1
+  path=$2
+  via=$3
+  grep -Fxq "$path" "$tmp/orphan_set" 2>/dev/null && return 0
+  if [ "$show_tests" -eq 0 ] && printf '%s' "$path" | grep -Eq "$TEST_RE"; then
+    return 0
+  fi
+  printf '%s\n' "$path" >> "$tmp/orphan_set"
+  printf '%s\t%s\t%s\n' "$hop" "$path" "$via" >> "$tmp/orphans"
+}
+
+collect_orphans() {
+  : > "$tmp/orphans"
+  : > "$tmp/orphan_set"
+  : > "$tmp/seeds"
+  : > "$tmp/consumers"
+  git diff -U0 "$base" -- . ':(exclude).gecko/**' | awk '
+    function spec_from(line,   s) {
+      if (match(line, /from[[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^from[[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /from[[:space:]]+\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^from[[:space:]]+\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (match(line, /require[[:space:]]*\([[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^require[[:space:]]*\([[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /require[[:space:]]*\([[:space:]]*\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^require[[:space:]]*\([[:space:]]*\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (match(line, /import[[:space:]]*\([[:space:]]+"[^"]+"/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^import[[:space:]]*\([[:space:]]+"/, "", s)
+        sub(/"$/, "", s)
+        return s
+      }
+      if (match(line, /import[[:space:]]*\([[:space:]]*\047[^\047]+\047/)) {
+        s = substr(line, RSTART, RLENGTH)
+        sub(/^import[[:space:]]*\([[:space:]]*\047/, "", s)
+        sub(/\047$/, "", s)
+        return s
+      }
+      if (line ~ /^[[:space:]]*from[[:space:]]+[A-Za-z_.\/]+[[:space:]]+import[[:space:]]/) {
+        s = line
+        sub(/^[[:space:]]*from[[:space:]]+/, "", s)
+        sub(/[[:space:]]+import[[:space:]].*/, "", s)
+        return s
+      }
+      return ""
+    }
+    /^--- / {
+      file = $0
+      sub(/^--- /, "", file)
+      if (file ~ /^[a-z]\//) file = substr(file, 3)
+      if (file == "/dev/null") file = ""
+      next
+    }
+    /^\+\+\+/ { next }
+    /^diff / { next }
+    /^@@/ { next }
+    /^-/ && $0 !~ /^-{3}/ {
+      s = spec_from(substr($0, 2))
+      if (s != "" && file != "") print file "\t" s
+    }
+  ' > "$tmp/dropped_imports"
+
+  while IFS="$TAB" read -r consumer spec; do
+    [ -n "$spec" ] || continue
+    resolved=$(resolve_spec "$consumer" "$spec" || true)
+    [ -n "$resolved" ] && [ -f "$resolved" ] || continue
+    printf '%s\n' "$consumer" >> "$tmp/consumers"
+    printf '%s\t%s\n' "$resolved" "$consumer" >> "$tmp/seeds"
+  done < "$tmp/dropped_imports"
+
+  git diff --name-only --diff-filter=D "$base" -- . ':(exclude).gecko/**' > "$tmp/deleted_files"
+  while IFS= read -r del; do
+    [ -n "$del" ] || continue
+    printf '%s\n' "$del" >> "$tmp/consumers"
+    git show "$base:$del" 2>/dev/null | extract_specs > "$tmp/del_specs" || true
+    while IFS= read -r spec; do
+      [ -n "$spec" ] || continue
+      resolved=$(resolve_spec "$del" "$spec" || true)
+      [ -n "$resolved" ] && [ -f "$resolved" ] || continue
+      printf '%s\t%s\n' "$resolved" "$del" >> "$tmp/seeds"
+    done < "$tmp/del_specs"
+  done < "$tmp/deleted_files"
+
+  LC_ALL=C sort -u "$tmp/consumers" -o "$tmp/consumers"
+  : > "$tmp/exclude"
+
+  while IFS="$TAB" read -r resolved consumer; do
+    [ -n "$resolved" ] || continue
+    grep -Fxq "$resolved" "$tmp/orphan_set" 2>/dev/null && continue
+    cat "$tmp/consumers" > "$tmp/exclude"
+    if orphan_has_callers "$resolved" "$tmp/exclude"; then continue; fi
+    add_orphan 0 "$resolved" "$consumer"
+  done < "$tmp/seeds"
+
+  : > "$tmp/hop_seeds"
+  while IFS="$TAB" read -r hop path via; do
+    [ "$hop" = "0" ] || continue
+    extract_specs < "$path" > "$tmp/hop_specs" || true
+    while IFS= read -r spec; do
+      [ -n "$spec" ] || continue
+      resolved=$(resolve_spec "$path" "$spec" || true)
+      [ -n "$resolved" ] && [ -f "$resolved" ] || continue
+      grep -Fxq "$resolved" "$tmp/orphan_set" 2>/dev/null && continue
+      printf '%s\t%s\n' "$resolved" "$path" >> "$tmp/hop_seeds"
+    done < "$tmp/hop_specs"
+  done < "$tmp/orphans"
+
+  while IFS="$TAB" read -r resolved via; do
+    [ -n "$resolved" ] || continue
+    grep -Fxq "$resolved" "$tmp/orphan_set" 2>/dev/null && continue
+    cat "$tmp/consumers" "$tmp/orphan_set" > "$tmp/exclude"
+    if orphan_has_callers "$resolved" "$tmp/exclude"; then continue; fi
+    add_orphan 1 "$resolved" "$via"
+  done < "$tmp/hop_seeds"
+}
+
 # --- review ----------------------------------------------------------------
 
 cmd_review() {
@@ -199,6 +477,12 @@ cmd_review() {
   done < "$tmp/untracked"
   total_added=$((total_added + untracked_lines))
 
+  n_orphans=0
+  if [ -s "$tmp/numstat" ] || [ -s "$tmp/untracked_vis" ]; then
+    collect_orphans
+    n_orphans=$(wc -l < "$tmp/orphans" | tr -d ' ')
+  fi
+
   if [ ! -s "$tmp/numstat" ] && [ ! -s "$tmp/untracked_vis" ]; then
     if [ "$json" -eq 1 ]; then
       printf '{"base":"%s","clean":true}\n' "$base"
@@ -217,17 +501,19 @@ cmd_review() {
     if [ "$show_all" -eq 1 ]; then
       new_cap=$n_new
       touched_cap=$n_touched
+      orphan_cap=$n_orphans
     else
       new_cap=15
       touched_cap=20
+      orphan_cap=15
     fi
     truncated=false
-    if [ "$n_new" -gt "$new_cap" ] || [ "$n_touched" -gt "$touched_cap" ]; then
+    if [ "$n_new" -gt "$new_cap" ] || [ "$n_touched" -gt "$touched_cap" ] || [ "$n_orphans" -gt "$orphan_cap" ]; then
       truncated=true
     fi
 
-    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"tests_hidden":%s,"grew":%s,"new":%s,"truncated":%s,"candidates":[' \
-      "$base" "$total_added" "$total_deleted" "$ratio_json" "$n_tests" "$n_grew" "$n_new" "$truncated"
+    printf '{"base":"%s","added":%s,"deleted":%s,"ratio":%s,"tests_hidden":%s,"grew":%s,"new":%s,"orphans":%s,"truncated":%s,"candidates":[' \
+      "$base" "$total_added" "$total_deleted" "$ratio_json" "$n_tests" "$n_grew" "$n_new" "$n_orphans" "$truncated"
 
     first=1
     while IFS="$TAB" read -r a p; do
@@ -261,11 +547,40 @@ cmd_review() {
       if [ "$first" -eq 0 ]; then printf ','; fi; first=0
       printf '{"path":"%s","lines":%s}' "$(printf '%s' "$f" | esc)" "$n"
     done < "$tmp/untracked_vis"
+    printf '],"orphan_files":['
+    first=1
+    shown=0
+    while IFS="$TAB" read -r hop p via; do
+      [ -n "$p" ] || continue
+      if [ "$shown" -ge "$orphan_cap" ]; then break; fi
+      if [ "$first" -eq 0 ]; then printf ','; fi; first=0
+      printf '{"path":"%s","via":"%s","hop":%s}' "$(printf '%s' "$p" | esc)" "$(printf '%s' "$via" | esc)" "$hop"
+      shown=$((shown + 1))
+    done < "$tmp/orphans"
     printf ']}\n'
     return 0
   fi
 
   printf 'gecko review (base: %s)\n\n' "$base"
+
+  if [ -s "$tmp/orphans" ]; then
+    printf 'ORPHANS (lost a caller in this diff, nothing else references them)\n'
+    shown=0
+    while IFS="$TAB" read -r hop p via; do
+      [ -n "$p" ] || continue
+      if [ "$show_all" -eq 0 ] && [ "$shown" -ge 15 ]; then break; fi
+      if [ "$hop" = "0" ]; then
+        printf '  %-44s via %s\n' "$p" "$via"
+      else
+        printf '  %-44s via %s  hop %s\n' "$p" "$via" "$hop"
+      fi
+      shown=$((shown + 1))
+    done < "$tmp/orphans"
+    if [ "$show_all" -eq 0 ] && [ "$n_orphans" -gt "$shown" ]; then
+      printf '  ... and %s more (--all)\n' "$((n_orphans - shown))"
+    fi
+    printf '\n'
+  fi
 
   if [ -s "$tmp/grew" ]; then
     printf 'GREW (existed before, added lines, deleted none)\n'
@@ -319,8 +634,8 @@ cmd_review() {
   fi
 
   ratio=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "n/a"; else printf "%.1f", a/d }')
-  printf 'summary: +%s -%s  ratio %s:1  (grew: %s, new: %s, tests hidden: %s, untracked: %s)\n' \
-    "$total_added" "$total_deleted" "$ratio" "$n_grew" "$n_new" "$n_tests" "$n_untracked"
+  printf 'summary: +%s -%s  ratio %s:1  (grew: %s, new: %s, tests hidden: %s, untracked: %s, orphans: %s)\n' \
+    "$total_added" "$total_deleted" "$ratio" "$n_grew" "$n_new" "$n_tests" "$n_untracked" "$n_orphans"
 }
 
 # --- ratchet ---------------------------------------------------------------

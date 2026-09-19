@@ -107,33 +107,38 @@ Comportamiento:
   Esas líneas **entran** al `+N` del summary y a `--json` `"added"`.
 - **Candidato** = archivo con líneas agregadas y **cero borradas**.
 - Separa **GREW** (ya existía y solo creció — donde se esconde el código muerto)
-  de **NEW FILES** (nuevo, todo adición por definición). GREW va primero.
+  de **NEW FILES** (nuevo, todo adición por definición).
+- **ORPHANS** va primero cuando hay. De las líneas `import`/`from`/`require`
+  borradas en el diff, resuelve el módulo local y pregunta con `git grep` si
+  queda algún caller. Si no, es candidato — aunque el archivo no esté en el
+  diff (el service que un hook de React Query acaba de reemplazar). Un hop:
+  los imports privados de esos huérfanos. No es un call-graph; es heurística
+  de imports. Paquetes npm se ignoran. Capa a 15 salvo `--all`.
 - Oculta tests (`__tests__/`, `tests/`, `.test.`, `.spec.`, `test_*`,
   `*_test.go`, y untracked de test) salvo `--tests`. Capa las listas
   secundarias salvo `--all` (también en `--json`, con `"truncated"`).
 - Cierra con el resumen: total agregado (incluye untracked), total borrado,
-  ratio, grew/new/tests hidden/untracked.
+  ratio, grew/new/tests hidden/untracked/orphans.
 
 Salida (legible por agente, terse):
 
 ```
 gecko review (base: HEAD)
 
+ORPHANS (lost a caller in this diff, nothing else references them)
+  src/services/fooService.ts                   via src/screens/page.ts
+  src/api/fooClient.ts                         via src/services/fooService.ts  hop 1
+
 GREW (existed before, added lines, deleted none)
   src/foo.ts                                   +142    -0
-  src/bar.ts                                   +18     -0
 
 NEW FILES (all additions by definition)
-  src/csv.js                                   +60     -0
+  src/hooks/useFooQuery.ts                     +60     -0
 
 TOUCHED (added and removed)
-  src/baz.ts                                   +30     -12     net +18
-  src/qux.ts                                   +2      -40     net -38     shrunk
+  src/screens/page.ts                          +8      -12     net -4     shrunk
 
-untracked (not in --numstat)
-  src/new.ts                                   +60
-
-summary: +312 -52  ratio 6.0:1  (grew: 2, new: 1, tests hidden: 0, untracked: 1)
+summary: +210 -12  ratio 17.5:1  (grew: 1, new: 1, tests hidden: 0, untracked: 0, orphans: 2)
 ```
 
 `--json` para consumo programático.
@@ -185,23 +190,25 @@ conoce: solo compara la lista antes y después.
 
 ## 7. La skill (`SKILL.md`)
 
-Inglés, misma forma que ponytail (frontmatter + secciones + niveles).
+Inglés. El cuerpo es el **reap** (pasos con criterio de done); lo demás es
+referencia. Palabras ancla: `reap`, `ORPHANS`, `ratchet`, `GREW`.
 
 Contenido mínimo:
 
-- **Invariante.** *"Un cambio no está cerrado hasta que cada línea agregada esté
-  contabilizada: justificada por escrito, o borrada."*
-- **Procedimiento (el pase de recolección):**
-  1. Correr `gecko review` antes de declarar terminado.
-  2. Por cada candidato: borrar lo que ya no tiene referente, o anotar la razón.
-  3. Para adiciones que quedan, confirmar que su razón sigue en pie.
-  4. `gecko check` debe pasar.
-- **Convención de anotación.** Reutiliza `ponytail:`; agrega `gecko:` para
-  adiciones que se mantienen a propósito. Formato: `# gecko: <razón> — borrar
-  cuando <condición>`.
-- **Niveles.** `lite` / `full` / `ultra`, paridad con ponytail.
-- **Límites honestos.** No detecta ramas muertas, campos nunca asignados, ni
-  efectos muertos. Eso lo encuentra ejecutar el producto, no analizarlo.
+- **Invariante.** Un cambio no está cerrado hasta haber sido reaped.
+- **Procedimiento**, cada paso termina en un bound comprobable:
+  1. `gecko review` en pantalla. Si hay **ORPHANS**, es reemplazo.
+  2. Borrar ORPHANS (hop 0, hop 1); repetir review hasta que no queden o cada
+     path tenga un caller nombrable.
+  3. GREW: cada bloque agregado se queda solo si su razón sigue. TOUCHED con
+     mucho `+` y poco `-`.
+  4. Atajo que queda: `# gecko: <razón> — remove when <condición>`, las dos
+     mitades verdaderas.
+  5. `gecko check` imprime exactamente `no new findings`.
+- **Ratchet.** `check` niega crecimiento, no existencia.
+- **Niveles.** `lite` / `full` / `ultra`.
+- **Fuera del pase.** Ramas muertas dentro de una función viva: el producto, no
+  el diff.
 
 ## 8. Distribución e instalación
 
@@ -257,7 +264,8 @@ preguntar, no ve un spinner, paga por token y es literal. De ahí:
 2. **Seguro de re-ejecutar.** Nada es inocentemente destructivo: `baseline` no
    escribe sin `--update`.
 3. **Contrato skill↔CLI.** Los nombres que la skill le dice al agente que busque
-   (`GREW`, `NEW FILES`, `no new findings`) son exactamente los que imprime el CLI.
+   (`ORPHANS`, `GREW`, `NEW FILES`, `no new findings`) son exactamente los que
+   imprime el CLI.
 4. **Veredicto parseable.** `check --json` devuelve
    `{"verdict":"clean"|"findings"|"detector_failed","new_count":N,"findings":[...]}`.
 5. **Barato.** Salida capada por defecto (`--all` la levanta); `--json` refleja

@@ -1,89 +1,73 @@
 ---
 name: gecko
 description: >
-  Enforces deletion as an output. Before a change counts as done, every added
-  line must be accounted for: justified in writing, or removed. Uses git as the
-  memory of what was added, and a ratchet to stop debt from growing. Pairs with
-  ponytail, which prevents at write time; gecko collects at close time. Use
-  when finishing a coding task, or when the user says "reap", "deletion pass",
-  "clean up", "close out", "what can we delete", "why is this still here", or
-  complains that the agent only ever adds code. Do NOT use for non-coding
-  requests.
+  Reap leftover code at close time. Before a coding change is done, every
+  added line is justified or deleted, and ORPHANS — modules that lost their
+  last caller, like a service a new hook replaced — are removed. Use when
+  finishing a change, replacing a module, the user says reap, or the session
+  has only been adding code.
 argument-hint: "[lite|full|ultra]"
 license: MIT
 ---
 
 # Gecko
 
-You are a collector. Writing code is half the job; the other half is removing
-what no longer earns its place. You do not delete out of tidiness. You delete
-because a change is not done while it carries lines nobody can justify.
+A change is not closed until it has been **reaped**: every added line justified
+or deleted, and every **ORPHAN** gone.
 
-## Running it
+Commands are `gecko`. If it is not on `PATH`, run `scripts/gecko` next to this
+skill. Default intensity is **full** (`lite` reports; `ultra` walks another hop
+after each delete).
 
-The CLI ships with this skill at `scripts/gecko` (relative to this skill's
-directory). Commands below are written as `gecko`; run `scripts/gecko` instead
-when it is not on your `PATH`. It needs `git` and nothing else — no network, no
-dependencies.
+<what-to-do>
 
-## The invariant
+1. Run `gecko review`. Done when its output is on screen. If it printed
+   **ORPHANS**, this change replaced a path — step 2. Otherwise step 3.
+2. **Replacement.** Delete each ORPHANS path, hop 0 then hop 1. The NEW FILE
+   is the replacement. Run `gecko review` again. Done when ORPHANS is absent,
+   or every remaining path still has a caller you can name. Then step 3.
+3. **Accretion.** For each GREW file, each added block: keep it only if its
+   reason still exists. Skim TOUCHED with a large `+` and a tiny `-`. Done when
+   every surviving addition has a reason.
+4. A shortcut that stays gets `# gecko: <reason> — remove when <condition>`,
+   and only when both halves are true.
+5. Run `gecko check`. Done when stdout is exactly `no new findings`.
+   `detector_failed` means fix the detector, not the baseline. Any other
+   output means wire it, delete it, or explain it — pick one.
 
-**A change is not closed until every added line is accounted for: justified in
-writing, or removed.**
+</what-to-do>
 
-An addition is a promise — "I exist to serve X". When X is gone, the promise is
-orphaned and the line must go. Not remembering what you added is not an excuse:
-git remembers.
+<supporting-info>
 
-## The reap pass
+## Ratchet
 
-Run this before saying a task is done.
+`gecko check` refuses **growth**, not existence. Pre-existing debt stays in
+`.gecko/baseline`. Tightening the baseline is its own commit with a reason
+(`gecko baseline --update`).
 
-1. `gecko review` — get the target list. It separates **GREW** (files that
-   already existed and only gained lines, where orphaned additions hide) from
-   **NEW FILES** (all additions by definition). GREW comes first and is where you
-   look. Then skim **TOUCHED** files with a large `+` and a tiny `-` — dead
-   additions hide there too. Test files are hidden unless you pass `--tests`;
-   long lists are capped unless you pass `--all`. Untracked lines are in the
-   summary `+N` and in `untracked:`.
-2. For every GREW file, for every added block, ask: **does its reason still
-   exist?** If no, delete it. NEW FILES are new, so skim them — don't grind them.
-3. If it stays, confirm the reason still holds. If it is a deliberate shortcut
-   with a known ceiling, mark it:
-   `# gecko: <reason> — remove when <condition>`.
-4. `gecko check` must pass. It prints exactly `no new findings` on success.
-   `detector_failed` means the detector crashed — fix that, do not update the
-   baseline. Anything else means you wired nothing, deleted nothing, and
-   explained nothing. Pick one.
+## Sections
 
-Never add a `gecko:`/`ponytail:` annotation just to silence the ratchet. The
-annotation is a claim about the future; a false one is worse than dead code,
-because it looks handled.
+The CLI names the work. Look for exactly these: **ORPHANS**, **GREW**,
+**NEW FILES**, **TOUCHED**, `no new findings`.
 
-## The ratchet
-
-`gecko check` refuses growth, not existence. Pre-existing debt is frozen in
-`.gecko/baseline` and left alone. Only *new* findings fail. Do not try to drive
-the baseline to zero; tightening it is a separate, deliberate act
-(`gecko baseline --update`) that belongs in its own commit with a reason.
+ORPHANS are modules that lost their last caller in this diff, plus one hop of
+imports that existed only for them. That is the leftover service after a hook
+lands. It follows dropped `import` / `from` / `require`, not a call graph.
 
 ## Intensity
 
-| Level | What changes |
-|-------|--------------|
-| **lite** | Run the reap pass and report the GREW files, but only delete when asked. |
-| **full** | Delete orphaned additions, annotate the rest. `gecko check` clean. Default. |
-| **ultra** | Reap aggressively and challenge every surviving addition: name why it still earns its place. |
+| Level | Demand |
+|-------|--------|
+| **lite** | Run the reap; report ORPHANS and GREW; delete only when asked. |
+| **full** | Delete ORPHANS and unjustified additions. `gecko check` clean. |
+| **ultra** | Another hop after each delete. Name why every surviving addition stays. |
 
-## Honest limits
+## Outside this pass
 
-This finds orphaned additions and annotation debt. It does **not** find a dead
-branch inside a live function, a field nothing assigns, or a function that is
-called but whose effect is dead. Those are found by running the product, not by
-reading a diff. Do not claim more than the tool sees.
+A dead branch inside a live function, a field nothing assigns, an effect that
+is called but does nothing — those need the product running, not this diff.
 
-## Boundaries
+`stop gecko` / `normal mode` ends the pass for the session. Level holds until
+changed or session end.
 
-Gecko governs what stays, not how you talk. It pairs with ponytail: ponytail
-prevents at write time, gecko collects at close time. `stop gecko` /
-`normal mode` disables it. Level persists until changed or session end.
+</supporting-info>
