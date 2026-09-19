@@ -1,4 +1,5 @@
-# .gecko/config — optional. Sourced by `gecko check` / `gecko baseline`.
+# .gecko/config — optional. Sourced by `gecko check` / `gecko baseline`
+# only when this file is tracked (commit it).
 #
 # Define gecko_detect() to print findings, one per line, as:
 #     <path><TAB><finding-key>
@@ -7,7 +8,7 @@
 # finding registers as a new one.
 #
 # If you do not define gecko_detect(), gecko uses its built-in annotation
-# ratchet (unresolved `ponytail:` / `gecko:` markers). Zero config, any
+# ratchet (comment-shaped `ponytail:` / `gecko:` markers). Zero config, any
 # language.
 
 # --- TypeScript / JavaScript -------------------------------------------------

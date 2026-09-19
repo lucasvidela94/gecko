@@ -12,10 +12,11 @@
 set -eu
 
 PROG=gecko
-VERSION=0.6.0
+VERSION=0.7.0
 OWNER=lucasvidela94
 REPO=gecko
 TAB=$(printf '\t')
+TEST_RE='(__tests__/|(^|/)tests/|(^|/)test_|_test[.]|[.]test[.]|[.]spec[.])'
 
 die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
 
@@ -32,10 +33,16 @@ self_path() {
 
 load_config() {
   cfg="$(gecko_dir)/config"
-  if [ -f "$cfg" ]; then
-    # shellcheck source=/dev/null
-    . "$cfg"
+  [ -f "$cfg" ] || return 0
+  if ! git ls-files --error-unmatch .gecko/config >/dev/null 2>&1; then
+    printf '%s: ignoring untracked .gecko/config; commit it to enable the detector.\n' "$PROG" >&2
+    return 0
   fi
+  if [ "${GECKO_QUIET:-0}" != "1" ]; then
+    printf '%s: sourcing .gecko/config (this executes repo code).\n' "$PROG" >&2
+  fi
+  # shellcheck source=/dev/null
+  . "$cfg"
 }
 
 usage() {
@@ -52,18 +59,26 @@ usage:
   gecko self-update [--check]          update the CLI from GitHub releases
   gecko help
 
-config:   .gecko/config may define gecko_detect() printing "<path><TAB><finding>".
+config:   committed .gecko/config may define gecko_detect() printing "<path><TAB><finding>".
 baseline: .gecko/baseline (commit it).
 EOF
 }
 
 # --- detection -------------------------------------------------------------
 
-# Default detector: the annotation ratchet. Counts unresolved `ponytail:` /
-# `gecko:` markers. Language-agnostic, zero config. Normalized to
-# "<path><TAB><reason>" so moving a line does not register as a new finding.
+# Default detector: comment-shaped `ponytail:` / `gecko:` markers. Skips docs,
+# vendor, markdown and editor/agent trees. Normalized to "<path><TAB><reason>"
+# so moving a line does not register as a new finding.
 gecko_detect_default() {
-  git grep -nE '(ponytail|gecko):' -- . ':(exclude).gecko/**' 2>/dev/null | awk '
+  git grep -nE '^[[:space:]]*(#|//|--)[[:space:]]*(ponytail|gecko):' -- . \
+    ':(exclude).gecko/**' \
+    ':(exclude)docs/**' \
+    ':(exclude)vendor/**' \
+    ':(exclude).agents/**' \
+    ':(exclude).cursor/**' \
+    ':(exclude)*.md' \
+    ':(exclude)**/*.md' \
+    2>/dev/null | awk '
     {
       i = index($0, ":")
       if (i == 0) next
@@ -86,6 +101,24 @@ detect() {
   else
     gecko_detect_default
   fi
+}
+
+run_detect() {
+  DETECT_STATUS=0
+  detect > "$1" 2> "$2" || DETECT_STATUS=$?
+}
+
+fail_detector() {
+  json=${1:-0}
+  if [ "$json" -eq 1 ]; then
+    printf '{"verdict":"detector_failed","new_count":0,"gone_count":0,"findings":[]}\n'
+  fi
+  printf '%s: detector failed (exit %s)\n' "$PROG" "$DETECT_STATUS" >&2
+  if [ -s "$2" ]; then
+    cat "$2" >&2
+  fi
+  printf '%s: fix the detector; refusing to report a clean ratchet.\n' "$PROG" >&2
+  exit 1
 }
 
 # Honest first run: the default detector only sees annotations, so say so.
@@ -115,21 +148,13 @@ cmd_review() {
   done
 
   root=$(repo_root); cd "$root" || die "cannot cd to repo root"
+  git rev-parse --verify -q "$base" >/dev/null 2>&1 || die "review: unknown ref '$base'"
   tmp=$(mktemp -d) || die "mktemp failed"
   trap 'rm -rf "$tmp"' EXIT INT TERM
 
-  : > "$tmp/numstat"
-  if git rev-parse --verify -q "$base" >/dev/null 2>&1; then
-    git diff --numstat "$base" -- . ':(exclude).gecko/**' > "$tmp/numstat"
-  fi
+  git diff --numstat "$base" -- . ':(exclude).gecko/**' > "$tmp/numstat"
   git ls-files --others --exclude-standard -- . ':(exclude).gecko/**' > "$tmp/untracked" 2>/dev/null || : > "$tmp/untracked"
-
-  # A brand-new file is all-additions by definition, so it is not a reap target.
-  # The interesting candidates are files that already existed and only grew.
-  : > "$tmp/newfiles"
-  if git rev-parse --verify -q "$base" >/dev/null 2>&1; then
-    git diff --name-only --diff-filter=A "$base" -- . ':(exclude).gecko/**' > "$tmp/newfiles"
-  fi
+  git diff --name-only --diff-filter=A "$base" -- . ':(exclude).gecko/**' > "$tmp/newfiles"
 
   awk -F'\t' '$1 ~ /^[0-9]+$/ && $1 > 0 && $2 == 0 { printf "%s\t%s\n", $1, $3 }' "$tmp/numstat" \
     | sort -rn -k1,1 > "$tmp/cands_raw"
@@ -138,11 +163,10 @@ cmd_review() {
     printf '%s\t%s\t%s\n' "$tag" "$a" "$p"
   done < "$tmp/cands_raw" > "$tmp/cands_tagged"
 
-  # test files are noise for a reap pass; hidden unless --tests
   if [ "$show_tests" -eq 0 ]; then
-    awk -F'\t' '$3 ~ /(__tests__\/|\.test\.|\.spec\.)/ { n++ } END { printf "%d\n", n + 0 }' \
+    awk -F'\t' -v re="$TEST_RE" '$3 ~ re { n++ } END { printf "%d\n", n + 0 }' \
       "$tmp/cands_tagged" > "$tmp/n_tests"
-    awk -F'\t' '$3 !~ /(__tests__\/|\.test\.|\.spec\.)/' "$tmp/cands_tagged" > "$tmp/cands"
+    awk -F'\t' -v re="$TEST_RE" '$3 !~ re' "$tmp/cands_tagged" > "$tmp/cands"
   else
     printf '0\n' > "$tmp/n_tests"
     cp "$tmp/cands_tagged" "$tmp/cands"
@@ -159,7 +183,23 @@ cmd_review() {
   awk -F'\t' '$1 ~ /^[0-9]+$/ { a += $1; d += $2 } END { printf "%d\t%d\n", a, d }' "$tmp/numstat" > "$tmp/totals"
   read -r total_added total_deleted < "$tmp/totals"
 
-  if [ ! -s "$tmp/numstat" ] && [ ! -s "$tmp/untracked" ]; then
+  : > "$tmp/untracked_vis"
+  untracked_lines=0
+  n_untracked=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if [ "$show_tests" -eq 0 ] && printf '%s' "$f" | grep -Eq "$TEST_RE"; then
+      n_tests=$((n_tests + 1))
+      continue
+    fi
+    n=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || printf '0')
+    untracked_lines=$((untracked_lines + n))
+    n_untracked=$((n_untracked + 1))
+    printf '%s\t%s\n' "$n" "$f" >> "$tmp/untracked_vis"
+  done < "$tmp/untracked"
+  total_added=$((total_added + untracked_lines))
+
+  if [ ! -s "$tmp/numstat" ] && [ ! -s "$tmp/untracked_vis" ]; then
     if [ "$json" -eq 1 ]; then
       printf '{"base":"%s","clean":true}\n' "$base"
     else
@@ -216,11 +256,11 @@ cmd_review() {
 
     printf '],"untracked":['
     first=1
-    while IFS= read -r f; do
-      n=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || printf '0')
+    while IFS="$TAB" read -r n f; do
+      [ -n "$f" ] || continue
       if [ "$first" -eq 0 ]; then printf ','; fi; first=0
       printf '{"path":"%s","lines":%s}' "$(printf '%s' "$f" | esc)" "$n"
-    done < "$tmp/untracked"
+    done < "$tmp/untracked_vis"
     printf ']}\n'
     return 0
   fi
@@ -269,18 +309,18 @@ cmd_review() {
     printf '\n'
   fi
 
-  if [ -s "$tmp/untracked" ]; then
+  if [ -s "$tmp/untracked_vis" ]; then
     printf 'untracked (not in --numstat)\n'
-    while IFS= read -r f; do
-      n=$(wc -l < "$f" 2>/dev/null | tr -d ' ' || printf '?')
+    while IFS="$TAB" read -r n f; do
+      [ -n "$f" ] || continue
       printf '  %-44s +%s\n' "$f" "$n"
-    done < "$tmp/untracked"
+    done < "$tmp/untracked_vis"
     printf '\n'
   fi
 
   ratio=$(awk -v a="$total_added" -v d="$total_deleted" 'BEGIN { if (d == 0) print "n/a"; else printf "%.1f", a/d }')
-  printf 'summary: +%s -%s  ratio %s:1  (grew: %s, new: %s, tests hidden: %s)\n' \
-    "$total_added" "$total_deleted" "$ratio" "$n_grew" "$n_new" "$n_tests"
+  printf 'summary: +%s -%s  ratio %s:1  (grew: %s, new: %s, tests hidden: %s, untracked: %s)\n' \
+    "$total_added" "$total_deleted" "$ratio" "$n_grew" "$n_new" "$n_tests" "$n_untracked"
 }
 
 # --- ratchet ---------------------------------------------------------------
@@ -303,7 +343,10 @@ cmd_check() {
   tmp=$(mktemp -d) || die "mktemp failed"
   trap 'rm -rf "$tmp"' EXIT INT TERM
 
-  detect > "$tmp/raw" 2>/dev/null || true
+  run_detect "$tmp/raw" "$tmp/detect.err"
+  if [ "$DETECT_STATUS" -ne 0 ]; then
+    fail_detector "$json" "$tmp/detect.err"
+  fi
   LC_ALL=C sort -u "$tmp/raw" > "$tmp/current"
 
   if [ ! -f "$baseline" ]; then
@@ -367,7 +410,10 @@ cmd_baseline() {
   tmp=$(mktemp -d) || die "mktemp failed"
   trap 'rm -rf "$tmp"' EXIT INT TERM
 
-  detect > "$tmp/raw" 2>/dev/null || true
+  run_detect "$tmp/raw" "$tmp/detect.err"
+  if [ "$DETECT_STATUS" -ne 0 ]; then
+    fail_detector 0 "$tmp/detect.err"
+  fi
   LC_ALL=C sort -u "$tmp/raw" > "$tmp/current"
   n=$(grep -c . "$tmp/current" || true)
 
@@ -392,10 +438,13 @@ cmd_hook() {
 
   case "$action" in
     install)
-      if [ -f "$hook" ] && ! grep -qF "$marker" "$hook"; then
-        die "pre-commit already exists and is not ours; add this line manually: $marker"
-      fi
       abs=$(self_path)
+      if [ -f "$hook" ] && ! grep -qF "$marker" "$hook"; then
+        printf '%s: pre-commit already exists and is not ours. Append:\n' "$PROG" >&2
+        printf '  %s\n' "$marker" >&2
+        printf '  exec "%s" check\n' "$abs" >&2
+        exit 1
+      fi
       mkdir -p "$root/.git/hooks"
       {
         printf '#!/bin/sh\n'

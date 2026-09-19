@@ -6,6 +6,27 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-18
+
+### Added
+
+- `check --json` reports `"verdict":"detector_failed"` when the detector exits
+  non-zero. `baseline --update` refuses to write in that case. A crashed knip
+  no longer looks like a clean ratchet.
+
+### Changed
+
+- `review --base` dies on an unknown ref instead of printing `clean`.
+- `review` summary and `--json` `added` count untracked lines. The summary
+  now includes `untracked: N`.
+- Annotation ratchet only counts comment-shaped markers (`#` / `//` / `--`)
+  and skips `docs/`, `vendor/`, `*.md`, `.agents/`, `.cursor/`.
+- `.gecko/config` is sourced only when it is tracked. An untracked copy is
+  ignored and reported on stderr.
+- Test hiding covers `tests/`, `test_*`, `*_test.go`, and untracked tests.
+- `hook install` prints the `exec … check` snippet to append when a foreign
+  pre-commit already exists.
+
 ## [0.6.0] - 2026-09-18
 
 ### Added
@@ -76,7 +97,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - Skill + CLI. POSIX `sh` + `git`, zero dependencies.
 - `install.sh` and distribution through [skills.sh](https://skills.sh/lucasvidela94/gecko).
 
-[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/lucasvidela94/gecko/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/lucasvidela94/gecko/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/lucasvidela94/gecko/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/lucasvidela94/gecko/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/lucasvidela94/gecko/compare/v0.3.0...v0.4.0

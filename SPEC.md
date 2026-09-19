@@ -101,33 +101,39 @@ concreto. No decide: muestra.
 Comportamiento:
 
 - Base por defecto: `HEAD` (cambios en el working tree). `--base REF` para un
-  rango.
+  rango. Un ref que no existe → exit 1 (`unknown ref`), nunca `clean`.
 - Usa `git diff --numstat` para archivos trackeados.
 - Lista archivos untracked aparte (con `wc -l`), porque `--numstat` no los ve.
+  Esas líneas **entran** al `+N` del summary y a `--json` `"added"`.
 - **Candidato** = archivo con líneas agregadas y **cero borradas**.
 - Separa **GREW** (ya existía y solo creció — donde se esconde el código muerto)
   de **NEW FILES** (nuevo, todo adición por definición). GREW va primero.
-- Oculta tests (`__tests__/`, `.test.`, `.spec.`) salvo `--tests`. Capa las listas
+- Oculta tests (`__tests__/`, `tests/`, `.test.`, `.spec.`, `test_*`,
+  `*_test.go`, y untracked de test) salvo `--tests`. Capa las listas
   secundarias salvo `--all` (también en `--json`, con `"truncated"`).
-- Cierra con el resumen: total agregado, total borrado, ratio, grew/new/tests.
+- Cierra con el resumen: total agregado (incluye untracked), total borrado,
+  ratio, grew/new/tests hidden/untracked.
 
 Salida (legible por agente, terse):
 
 ```
 gecko review (base: HEAD)
 
-CANDIDATES (added, nothing removed)
-  src/foo.ts        +142  -0   net +142
-  src/bar.ts         +18  -0   net  +18
+GREW (existed before, added lines, deleted none)
+  src/foo.ts                                   +142    -0
+  src/bar.ts                                   +18     -0
 
-TOUCHED
-  src/baz.ts         +30 -12   net  +18
-  src/qux.ts          +2 -40   net  -38   shrunk
+NEW FILES (all additions by definition)
+  src/csv.js                                   +60     -0
+
+TOUCHED (added and removed)
+  src/baz.ts                                   +30     -12     net +18
+  src/qux.ts                                   +2      -40     net -38     shrunk
 
 untracked (not in --numstat)
-  src/new.ts         +60
+  src/new.ts                                   +60
 
-summary: +252 -52  ratio 4.8:1  (candidates: 2)
+summary: +312 -52  ratio 6.0:1  (grew: 2, new: 1, tests hidden: 0, untracked: 1)
 ```
 
 `--json` para consumo programático.
@@ -144,14 +150,20 @@ Reglas (idénticas en filosofía al `deadcode-ratchet` de gentle-ai):
   actualiza el baseline **diciendo por qué en el commit**.
 - Un hallazgo que desapareció → nota informativa, no falla. Invita a apretar el
   baseline con `--update`.
+- Si el detector sale distinto de cero, el ratchet **falla cerrado**:
+  `verdict` `detector_failed`, exit 1. `baseline --update` no escribe.
+  Un detector caído no puede parecer limpio.
 - Comparación con colación fijada (`LC_ALL=C`) para que sea reproducible entre
   máquinas. Sin esto, `comm` produce basura si los inputs no están ordenados
   igual.
 
 ### 6.3 Detectores (la parte específica de lenguaje)
 
-`.gecko/config` es un shell que gecko sourcea. Puede definir `gecko_detect()`,
-que imprime hallazgos, uno por línea, formato `<path>\t<clave>`.
+`.gecko/config` es un shell que gecko sourcea **solo si el archivo está
+trackeado**. Un config untracked se ignora (aviso en stderr): clonar un repo y
+correr `check` no ejecuta código ajeno todavía no commiteado. Puede definir
+`gecko_detect()`, que imprime hallazgos, uno por línea, formato
+`<path>\t<clave>`.
 
 ```sh
 # .gecko/config
@@ -162,8 +174,10 @@ gecko_detect() {
 ```
 
 Sin `gecko_detect()` definida, el detector por defecto es el **ratchet de
-anotaciones**: cuenta los marcadores `ponytail:` / `gecko:` sin resolver. Cero
-configuración, agnóstico de lenguaje, y directamente sobre deuda.
+anotaciones**: cuenta marcadores `ponytail:` / `gecko:` con forma de comentario
+(`#` / `//` / `--`, con indentación). Ignora `docs/`, `vendor/`, `*.md`,
+`.agents/` y `.cursor/`. Cero configuración, agnóstico de lenguaje, y
+directamente sobre deuda.
 
 Detectores conocidos que el usuario puede enchufar: `knip` (TS/JS), `vulture`
 (Python), `deadcode` (Go), `cargo udeps` (Rust). Gecko no los instala ni los
@@ -245,7 +259,7 @@ preguntar, no ve un spinner, paga por token y es literal. De ahí:
 3. **Contrato skill↔CLI.** Los nombres que la skill le dice al agente que busque
    (`GREW`, `NEW FILES`, `no new findings`) son exactamente los que imprime el CLI.
 4. **Veredicto parseable.** `check --json` devuelve
-   `{"verdict":"clean"|"findings","new_count":N,"findings":[...]}`.
+   `{"verdict":"clean"|"findings"|"detector_failed","new_count":N,"findings":[...]}`.
 5. **Barato.** Salida capada por defecto (`--all` la levanta); `--json` refleja
    los caps y marca `"truncated"`, para no truncar en silencio. La skill es corta.
 6. **Primera impresión honesta.** Sin detector configurado, `check` avisa por

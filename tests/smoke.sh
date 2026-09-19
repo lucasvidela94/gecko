@@ -99,4 +99,88 @@ pass "version prints"
 if [ -e .git/hooks/pre-commit ]; then fail "hook was not removed"; fi
 pass "hook install/uninstall"
 
+# 7b. foreign pre-commit: say how to append check, do not clobber
+printf '#!/bin/sh\necho other\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+hook_err="$("$GECKO" hook install 2>&1)" && fail "hook install should refuse a foreign pre-commit"
+printf '%s\n' "$hook_err" | grep -q 'exec ' || fail "hook refusal should print the exec line to append"
+printf '%s\n' "$hook_err" | grep -qF '# gecko:ratchet' || fail "hook refusal should print the marker"
+grep -q 'echo other' .git/hooks/pre-commit || fail "foreign pre-commit was overwritten"
+rm -f .git/hooks/pre-commit
+pass "hook install refuses foreign hooks with an append snippet"
+
+# 8. detector failure is fail-closed: check exits 1, baseline --update does not write
+mkdir -p .gecko
+before_bl=$(cat .gecko/baseline)
+printf 'gecko_detect() { return 1; }\n' > .gecko/config
+git add .gecko/config
+if "$GECKO" check >/dev/null 2>&1; then fail "check should fail when the detector fails"; fi
+"$GECKO" check --json 2>/dev/null | grep -q '"verdict":"detector_failed"' \
+  || fail "check --json should report detector_failed"
+if "$GECKO" baseline --update >/dev/null 2>&1; then fail "baseline --update must not write on detector failure"; fi
+after_bl=$(cat .gecko/baseline)
+[ "$before_bl" = "$after_bl" ] || fail "baseline --update rewrote the file after a detector crash"
+git rm -q -f .gecko/config
+rm -f .gecko/config
+pass "detector failure fails closed"
+
+# 9. untracked .gecko/config is not sourced
+printf 'gecko_detect() { printf "evil.ts\tboom\n"; }\n' > .gecko/config
+if "$GECKO" check >/dev/null 2>&1; then :; else fail "untracked config must not be sourced (would add a new finding)"; fi
+"$GECKO" check 2>&1 >/dev/null | grep -q 'ignoring untracked' \
+  || fail "check should say it ignored untracked .gecko/config"
+rm -f .gecko/config
+pass "untracked config is ignored"
+
+# 10. review --base on a missing ref dies, it does not report clean
+if "$GECKO" review --base DOESNOTEXIST >/dev/null 2>&1; then fail "review should die on an unknown --base"; fi
+"$GECKO" review --base DOESNOTEXIST 2>&1 | grep -q "unknown ref" \
+  || fail "review should name the unknown ref"
+pass "review dies on an unknown --base"
+
+# 11. summary / --json added counts untracked lines
+json_added() { sed -n 's/^{"base":"[^"]*","added":\([0-9]*\).*/\1/p'; }
+added_before=$("$GECKO" review --json | json_added)
+printf 'u1\nu2\nu3\n' > untracked-count.txt
+added_after=$("$GECKO" review --json | json_added)
+expected=$((added_before + 3))
+[ "$added_after" -eq "$expected" ] || fail "review --json added should include untracked lines ($added_after != $expected)"
+"$GECKO" review | grep -q 'untracked:' || fail "review summary should mention untracked"
+rm -f untracked-count.txt
+pass "review counts untracked lines in the summary"
+
+# 12. annotation ratchet: comment-shaped, skip docs/md/vendor
+mkdir -p docs vendor src
+printf '# gecko: documented in prose\n' > docs/note.md
+printf '// gecko: bundled leftover\n' > vendor/lib.js
+printf 'see gecko: this is prose\n' > src/prose.ts
+git add docs/note.md vendor/lib.js src/prose.ts
+if "$GECKO" check >/dev/null 2>&1; then :; else fail "docs/vendor/prose must not count as annotations"; fi
+printf '  // gecko: keep until pagination ships\n' > src/real.ts
+git add src/real.ts
+if "$GECKO" check >/dev/null 2>&1; then fail "a real comment annotation should fail check"; fi
+git rm -q -f docs/note.md vendor/lib.js src/prose.ts src/real.ts
+pass "annotation ratchet is comment-shaped and skips docs/vendor"
+
+# 13. tests/, test_*, *_test.go hidden unless --tests; untracked tests too
+mkdir -p tests src
+printf 't\n' > tests/smoke.sh
+printf 't\n' > test_foo.py
+printf 't\n' > src/foo_test.go
+git add tests/smoke.sh test_foo.py src/foo_test.go
+hidden="$("$GECKO" review)"
+printf '%s\n' "$hidden" | grep -q 'tests/smoke.sh' && fail "tests/smoke.sh should be hidden"
+printf '%s\n' "$hidden" | grep -q 'test_foo.py' && fail "test_foo.py should be hidden"
+printf '%s\n' "$hidden" | grep -q 'foo_test.go' && fail "foo_test.go should be hidden"
+shown="$("$GECKO" review --tests)"
+printf '%s\n' "$shown" | grep -q 'tests/smoke.sh' || fail "review --tests should show tests/smoke.sh"
+printf '%s\n' "$shown" | grep -q 'test_foo.py' || fail "review --tests should show test_foo.py"
+printf '%s\n' "$shown" | grep -q 'foo_test.go' || fail "review --tests should show foo_test.go"
+printf 't\n' > src/hidden.test.ts
+untracked_rev="$("$GECKO" review)"
+printf '%s\n' "$untracked_rev" | grep -q 'hidden.test.ts' && fail "untracked test files should be hidden"
+rm -f src/hidden.test.ts
+git rm -q -f tests/smoke.sh test_foo.py src/foo_test.go
+pass "test globs hide tests/, test_*, *_test.go, and untracked tests"
+
 printf '\nall smoke tests passed\n'

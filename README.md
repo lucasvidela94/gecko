@@ -49,7 +49,7 @@ GREW (existed before, added lines, deleted none)
 NEW FILES (all additions by definition)
   src/csv.js                                   +18     -0
 
-summary: +23 -0  ratio n/a:1  (grew: 1, new: 1, tests hidden: 0)
+summary: +23 -0  ratio n/a:1  (grew: 1, new: 1, tests hidden: 0, untracked: 0)
 
 $ gecko check
 NEW findings (nothing references these):
@@ -94,8 +94,9 @@ alone; only **new** findings fail.
 
 ## Detectors
 
-`gecko check` is language-agnostic. It runs whatever `.gecko/config` tells it to.
-Define `gecko_detect()` to print one finding per line as `<path><TAB><finding>`:
+`gecko check` is language-agnostic. It runs whatever a **committed**
+`.gecko/config` tells it to. An untracked config is ignored. Define
+`gecko_detect()` to print one finding per line as `<path><TAB><finding>`:
 
 ```sh
 # .gecko/config — TypeScript/JavaScript
@@ -107,9 +108,11 @@ gecko_detect() {
 ```
 
 Without a config, the default detector is the **annotation ratchet**: it counts
-unresolved `ponytail:` / `gecko:` markers. Zero setup, any language — but it only
-sees annotations, so `check` says so on stderr and points you here. Set
-`GECKO_QUIET=1` to silence that notice in CI.
+unresolved comment-shaped `ponytail:` / `gecko:` markers (`#` / `//` / `--`).
+It skips `docs/`, `vendor/`, markdown and editor/agent trees. Zero setup, any
+language — but it only sees annotations, so `check` says so on stderr and points
+you here. Set `GECKO_QUIET=1` to silence that notice in CI. If the detector
+exits non-zero, `check` fails closed (`detector_failed`); it will not look clean.
 
 Detectors you can plug in: `knip` (TS/JS), `vulture` (Python), `deadcode` (Go),
 `cargo udeps` (Rust). Gecko does not install or know them; it only compares the
@@ -146,7 +149,8 @@ a spinner, it pays per token, and it is literal. So:
 - **Non-interactive and safe to re-run.** Nothing is innocently destructive:
   `baseline` writes nothing without `--update`.
 - **Every failure carries the fix.** Success is exactly `no new findings`; a new
-  finding states the three ways out.
+  finding states the three ways out. A dead detector prints `detector_failed`
+  and refuses to write a baseline.
 - **Parseable verdicts.** `--json` on `review` and `check` gives a stable shape.
 - **Cheap.** Output is capped by default (`--all` lifts it), and `--json` mirrors
   the caps with a `truncated` flag, so nothing is dropped silently.
@@ -189,6 +193,8 @@ gecko self-update --check  # just report, change nothing
 - POSIX `sh` + `git`. No network, no telemetry, no dependencies.
 - It writes only under your repo's `.gecko/`, and — on `hook install` — one
   `pre-commit` hook. Nothing else.
+- `.gecko/config` is sourced as shell, and only once it is tracked. Commit it
+  on purpose; an untracked copy is ignored.
 - `self-update` is the only command that touches the network, and it fetches
   from this repository's GitHub releases.
 
